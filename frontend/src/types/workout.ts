@@ -21,3 +21,7 @@ export type Workout = {
   startedAt: string;
   exercises: WorkoutExercise[];
 };
+
+export type CompletedWorkout = Workout & {
+  completedAt: string;
+};

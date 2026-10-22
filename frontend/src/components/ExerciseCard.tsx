@@ -66,6 +66,16 @@ export default function ExerciseCard({
     weightInput.current?.focus();
   }
 
+  function useLastSet() {
+    const lastSet = exercise.sets[exercise.sets.length - 1];
+    if (!lastSet) return;
+
+    setWeight(String(lastSet.weightKg));
+    setReps(String(lastSet.reps));
+    setError("");
+    weightInput.current?.focus();
+  }
+
   function deleteSet(setId: string) {
     if (!window.confirm("Delete this set?")) return;
 
@@ -118,6 +128,16 @@ export default function ExerciseCard({
           ))}
         </ol>
       )}
+
+      {exercise.sets.length > 0 && editingId === null ? (
+        <button
+          type="button"
+          className="secondary"
+          onClick={useLastSet}
+        >
+          Use last set
+        </button>
+      ) : null}
 
       <form onSubmit={saveSet} noValidate>
         <p className="form-heading">
