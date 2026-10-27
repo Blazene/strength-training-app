@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useWorkouts } from "./hooks/useWorkouts";
 import ExerciseCard from "./components/ExerciseCard";
+import OfflineStatus from "./components/OfflineStatus";
 import { exercises } from "./data/exercises";
 import { findPreviousSession } from "./utils/workoutHistory";
 import type {
@@ -213,6 +214,8 @@ export default function App() {
         <h1>{heading}</h1>
         <p className="muted">Keep your focus on the next set.</p>
       </header>
+
+      <OfflineStatus />
 
       <p className="notice">
         Workouts are saved in this browser on this device. Logged sets survive
