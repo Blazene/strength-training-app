@@ -1,11 +1,14 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import type { WorkoutExercise, WorkoutSet } from "../types/workout";
 import type { PreviousSession } from "../utils/workoutHistory";
+import { parseSetInput } from "../utils/setInput";
+import type { SetInputError } from "../utils/setInput";
 
 type Props = {
   exercise: WorkoutExercise;
   previousSession: PreviousSession | null;
+  focusEntry?: boolean;
   onSaveSet: (exerciseId: string, set: WorkoutSet) => Promise<boolean>;
   onDeleteSet: (exerciseId: string, setId: string) => Promise<boolean>;
 };
@@ -13,85 +16,107 @@ type Props = {
 export default function ExerciseCard({
   exercise,
   previousSession,
+  focusEntry = false,
   onSaveSet,
   onDeleteSet
 }: Props) {
-  const [weight, setWeight] = useState("");
-  const [reps, setReps] = useState("");
+  const [weight, setWeight] = useState(() => String(exercise.sets.at(-1)?.weightKg ?? ""));
+  const [reps, setReps] = useState(() => String(exercise.sets.at(-1)?.reps ?? ""));
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [error, setError] = useState("");
+  const [error, setError] = useState<SetInputError | null>(null);
+  const [savingSet, setSavingSet] = useState(false);
+  const submitting = useRef(false);
   const weightInput = useRef<HTMLInputElement>(null);
+  const repsInput = useRef<HTMLInputElement>(null);
 
   const weightId = `${exercise.id}-weight`;
   const repsId = `${exercise.id}-reps`;
   const errorId = `${exercise.id}-error`;
+  const previousIndex = previousSession
+    ? Math.min(exercise.sets.length, previousSession.sets.length - 1)
+    : -1;
+  const previousSet = previousSession?.sets[previousIndex];
 
-  function resetForm() {
-    setWeight("");
-    setReps("");
+  useEffect(() => {
+    if (focusEntry && !weightInput.current?.closest("[hidden]")) {
+      weightInput.current?.focus();
+      weightInput.current?.select();
+    }
+  }, [focusEntry]);
+
+  function focusWeight() {
+    // A pending save must not steal focus after the user switches to History.
+    requestAnimationFrame(() => {
+      if (!weightInput.current?.closest("[hidden]")) {
+        weightInput.current?.focus();
+        weightInput.current?.select();
+      }
+    });
+  }
+
+  function resetForm(template: WorkoutSet | null) {
+    setWeight(template ? String(template.weightKg) : "");
+    setReps(template ? String(template.reps) : "");
     setEditingId(null);
-    setError("");
+    setError(null);
   }
 
   async function saveSet(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-
-    const weightKg = Number(weight);
-    const repetitions = Number(reps);
-
-    if (
-      weight.trim() === "" ||
-      reps.trim() === "" ||
-      !Number.isFinite(weightKg) ||
-      weightKg < 0 ||
-      !Number.isSafeInteger(repetitions) ||
-      repetitions < 1
-    ) {
-      setError("Enter a weight of 0 or more and a whole-number rep count of 1 or more.");
+    if (submitting.current) return;
+    const parsed = parseSetInput(weight, reps);
+    if (parsed.error) {
+      setError(parsed.error);
+      const input = parsed.error.field === "weight" ? weightInput.current : repsInput.current;
+      input?.focus();
+      input?.select();
       return;
     }
 
-    const saved = await onSaveSet(exercise.id, {
+    submitting.current = true;
+    setSavingSet(true);
+    setError(null);
+    const savedSet: WorkoutSet = {
       id: editingId ?? crypto.randomUUID(),
-      weightKg,
-      reps: repetitions
-    });
+      ...parsed.value
+    };
 
-    if (saved) {
-      resetForm();
-      weightInput.current?.focus();
+    try {
+      const saved = await onSaveSet(exercise.id, savedSet);
+      if (saved) {
+        const lastSet = exercise.sets.at(-1);
+        const nextTemplate = editingId && lastSet && lastSet.id !== editingId ? lastSet : savedSet;
+        resetForm(nextTemplate);
+        focusWeight();
+      } else {
+        setError({ message: "Could not save this set. Your entries are still here. Try again." });
+      }
+    } catch {
+      setError({ message: "Could not save this set. Your entries are still here. Try again." });
+    } finally {
+      submitting.current = false;
+      setSavingSet(false);
     }
   }
 
   function editSet(set: WorkoutSet) {
     setEditingId(set.id);
-    setWeight(String(set.weightKg));
-    setReps(String(set.reps));
-    setError("");
-    weightInput.current?.focus();
-  }
-
-  function useLastSet() {
-    const lastSet = exercise.sets[exercise.sets.length - 1];
-    if (!lastSet) return;
-
-    fillFromSet(lastSet);
+    fillFromSet(set);
   }
 
   function fillFromSet(set: WorkoutSet) {
     setWeight(String(set.weightKg));
     setReps(String(set.reps));
-    setError("");
-    weightInput.current?.focus();
+    setError(null);
+    focusWeight();
   }
 
   async function deleteSet(setId: string) {
     if (!window.confirm("Delete this set?")) return;
-
     const saved = await onDeleteSet(exercise.id, setId);
-
     if (saved && editingId === setId) {
-      resetForm();
+      resetForm(exercise.sets.filter((set) => set.id !== setId).at(-1) ?? null);
+      focusWeight();
     }
   }
 
@@ -115,84 +140,68 @@ export default function ExerciseCard({
                 })}
               </time>
             </p>
-            <ol className="set-list previous-set-list">
-              {previousSession.sets.map((set, index) => (
-                <li className="set-row" key={set.id}>
-                  <div>
-                    <span className="muted">Set {index + 1}</span>
-                    <strong>{set.weightKg} kg × {set.reps} reps</strong>
-                  </div>
-                  <button
-                    type="button"
-                    className="secondary small"
-                    onClick={() => fillFromSet(set)}
-                    disabled={editingId !== null}
-                    aria-label={`Use ${exercise.name} previous session set ${index + 1}`}
-                  >
-                    Use set {index + 1}
-                  </button>
-                </li>
-              ))}
-            </ol>
-            <p className="muted previous-hint">
-              {editingId
-                ? "Save or cancel your edit to use a previous set."
-                : "Choose a set to fill the form, adjust it, then press Add set to log it."}
+            <p className="previous-overview">
+              {previousSession.sets.map((set) => `${set.weightKg} kg × ${set.reps}`).join(" · ")}
             </p>
+            <details className="previous-details">
+              <summary>View previous sets ({previousSession.sets.length})</summary>
+              <ol className="set-list previous-set-list">
+                {previousSession.sets.map((set, index) => (
+                  <li className="set-row" key={set.id}>
+                    <div>
+                      <span className="muted">Set {index + 1}</span>
+                      <strong>{set.weightKg} kg × {set.reps} reps</strong>
+                    </div>
+                    <button
+                      type="button"
+                      className="secondary small"
+                      onClick={() => fillFromSet(set)}
+                      disabled={editingId !== null}
+                      aria-label={`Use ${exercise.name} previous session set ${index + 1}`}
+                    >
+                      Use set {index + 1}
+                    </button>
+                  </li>
+                ))}
+              </ol>
+            </details>
           </>
-        ) : (
-          <p className="muted">No previous session for this exercise yet.</p>
-        )}
+        ) : <p className="muted">No previous session for this exercise yet.</p>}
       </section>
 
-      {exercise.sets.length === 0 ? (
-        <p className="muted">No sets logged yet. Add your first set below.</p>
-      ) : (
-        <ol className="set-list">
-          {exercise.sets.map((set, index) => (
-            <li className="set-row" key={set.id}>
-              <div>
-                <span className="muted">Set {index + 1}</span>
-                <strong>{set.weightKg} kg × {set.reps} reps</strong>
-              </div>
-
-              <div className="row-actions">
-                <button
-                  type="button"
-                  className="secondary small"
-                  onClick={() => editSet(set)}
-                  aria-label={`Edit ${exercise.name} set ${index + 1}`}
-                >
-                  Edit
-                </button>
-                <button
-                  type="button"
-                  className="danger small"
-                  onClick={() => deleteSet(set.id)}
-                  aria-label={`Delete ${exercise.name} set ${index + 1}`}
-                >
-                  Delete
-                </button>
-              </div>
-            </li>
-          ))}
-        </ol>
-      )}
-
-      {exercise.sets.length > 0 && editingId === null ? (
-        <button
-          type="button"
-          className="secondary"
-          onClick={useLastSet}
-        >
-          Use last set
-        </button>
-      ) : null}
-
-      <form onSubmit={saveSet} noValidate>
+      <form className="set-entry" onSubmit={saveSet} noValidate aria-busy={savingSet}>
         <p className="form-heading">
-          {editingId ? "Edit selected set" : "Log a set"}
+          {editingId ? "Edit selected set" : `Log set ${exercise.sets.length + 1}`}
         </p>
+
+        <div className="entry-shortcuts">
+          {previousSet ? (
+            <button
+              type="button"
+              className="secondary"
+              disabled={editingId !== null}
+              aria-label={`Copy ${exercise.name} previous session set ${previousIndex + 1}`}
+              onClick={() => fillFromSet(previousSet)}
+            >
+              Copy previous set
+            </button>
+          ) : null}
+          {exercise.sets.length > 0 && editingId === null ? (
+            <button
+              type="button"
+              className="secondary"
+              onClick={() => fillFromSet(exercise.sets[exercise.sets.length - 1])}
+            >
+              Use last set
+            </button>
+          ) : null}
+        </div>
+        {previousSet ? (
+          <p className="muted copy-source">
+            {editingId ? "Save or cancel your edit to copy a previous set." :
+              `Last session, set ${previousIndex + 1}: ${previousSet.weightKg} kg × ${previousSet.reps} reps`}
+          </p>
+        ) : null}
 
         <div className="input-grid">
           <label htmlFor={weightId}>
@@ -200,51 +209,96 @@ export default function ExerciseCard({
             <input
               ref={weightInput}
               id={weightId}
-              type="number"
+              type="text"
               inputMode="decimal"
-              min="0"
-              step="any"
+              enterKeyHint="next"
+              autoComplete="off"
               required
               placeholder="60"
               value={weight}
-              onChange={(event) => setWeight(event.target.value)}
-              aria-invalid={Boolean(error)}
-              aria-describedby={error ? errorId : undefined}
+              onFocus={(event) => event.currentTarget.select()}
+              onChange={(event) => { setWeight(event.target.value); setError(null); }}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && !event.nativeEvent.isComposing) {
+                  event.preventDefault();
+                  repsInput.current?.focus();
+                  repsInput.current?.select();
+                }
+              }}
+              aria-invalid={error?.field === "weight"}
+              aria-describedby={error?.field === "weight" ? errorId : undefined}
             />
           </label>
 
           <label htmlFor={repsId}>
             Reps
             <input
+              ref={repsInput}
               id={repsId}
-              type="number"
+              type="text"
               inputMode="numeric"
-              min="1"
-              step="1"
+              enterKeyHint="done"
+              pattern="[0-9]*"
+              autoComplete="off"
               required
               placeholder="8"
               value={reps}
-              onChange={(event) => setReps(event.target.value)}
-              aria-invalid={Boolean(error)}
-              aria-describedby={error ? errorId : undefined}
+              onFocus={(event) => event.currentTarget.select()}
+              onChange={(event) => { setReps(event.target.value); setError(null); }}
+              aria-invalid={error?.field === "reps"}
+              aria-describedby={error?.field === "reps" ? errorId : undefined}
             />
           </label>
         </div>
 
-        {error ? <p id={errorId} className="error" role="alert">{error}</p> : null}
+        {error ? <p id={errorId} className="error" role="alert">{error.message}</p> : null}
 
         <div className="form-actions">
-          <button type="submit">
-            {editingId ? "Save changes" : "Add set"}
+          <button type="submit" disabled={savingSet}>
+            {savingSet ? "Saving…" : editingId ? "Save changes" : "Add set"}
           </button>
-
           {editingId ? (
-            <button type="button" className="secondary" onClick={resetForm}>
+            <button
+              type="button"
+              className="secondary"
+              onClick={() => { resetForm(exercise.sets.at(-1) ?? null); focusWeight(); }}
+            >
               Cancel edit
             </button>
           ) : null}
         </div>
+        {!editingId && exercise.sets.length > 0 ? (
+          <p className="muted entry-hint">Values are ready for your next set. Adjust them or tap Add set again.</p>
+        ) : null}
       </form>
+
+      {exercise.sets.length === 0 ? (
+        <p className="muted">No sets logged yet. Add your first set above.</p>
+      ) : (
+        <section aria-labelledby={`${exercise.id}-logged-title`}>
+          <h3 className="logged-title" id={`${exercise.id}-logged-title`}>Logged sets</h3>
+          <ol className="set-list">
+            {exercise.sets.map((set, index) => (
+              <li className="set-row" key={set.id}>
+                <div>
+                  <span className="muted">Set {index + 1}</span>
+                  <strong>{set.weightKg} kg × {set.reps} reps</strong>
+                </div>
+                <div className="row-actions">
+                  <button type="button" className="secondary small" onClick={() => editSet(set)}
+                    aria-label={`Edit ${exercise.name} set ${index + 1}`}>
+                    Edit
+                  </button>
+                  <button type="button" className="danger small" onClick={() => deleteSet(set.id)}
+                    aria-label={`Delete ${exercise.name} set ${index + 1}`}>
+                    Delete
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ol>
+        </section>
+      )}
     </section>
   );
 }

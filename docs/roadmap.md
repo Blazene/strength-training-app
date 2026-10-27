@@ -11,7 +11,7 @@ future day requests rather than inferring a different order.
 | 5–6 | IndexedDB persistence and active-session restore | Implemented |
 | 7 | Mock workout and friction fixes | Automated mock flow verified; offline/PWA was also added early |
 | 8–9 | Completion, history, previous-session sets | Implemented and verified; dedicated history/details navigation completed |
-| 10–11 | Numeric keyboards, large buttons, focus, copy previous set | Some controls already implemented; review entry speed at this milestone |
+| 10–11 | Numeric keyboards, large buttons, focus, copy previous set | Implemented and verified: form stays near heading, saved values remain ready, keyboard focus and matching prior-set shortcut |
 | 12–13 | App caching, PWA, offline reopen | Implemented early at the Day 7 checkpoint |
 | 14 | Full workout on the user's phone, ideally in the gym | Pending actual phone/gym test |
 | 15–16 | PostgreSQL schema, Express validation/endpoints, account auth | Pending; backend currently has health endpoints |

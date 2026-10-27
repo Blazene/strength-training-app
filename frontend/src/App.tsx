@@ -17,6 +17,7 @@ export default function App() {
   const workout = state.active;
   const [view, setView] = useState<"workout" | "history">("workout");
   const [selectedExerciseId, setSelectedExerciseId] = useState("");
+  const [entryFocusId, setEntryFocusId] = useState<string | null>(null);
   const completed = workout ? null : state.history[0] ?? null;
 
   function setWorkout(update: (current: Workout | null) => Workout | null) {
@@ -72,7 +73,10 @@ export default function App() {
       };
     });
 
-    if (saved) setSelectedExerciseId("");
+    if (saved) {
+      setSelectedExerciseId("");
+      setEntryFocusId(newExercise.id);
+    }
   }
 
   function removeExercise(exerciseId: string) {
@@ -319,6 +323,7 @@ export default function App() {
                 <div key={exercise.id}>
                   <ExerciseCard
                     exercise={exercise}
+                    focusEntry={entryFocusId === exercise.id}
                     previousSession={findPreviousSession(state.history, exercise.exerciseId, workout.id)}
                     onSaveSet={saveSet}
                     onDeleteSet={deleteSet}

@@ -135,7 +135,7 @@ select:focus-visible {
 
 .secondary { color: #ecf2ff; background: #344158; }
 .danger { color: #ffb4b4; background: #42272d; }
-.small { min-height: 44px; padding: 8px 12px; font-size: 14px; }
+.small { min-height: 48px; min-width: 48px; padding: 8px 12px; font-size: 14px; }
 
 .set-list { list-style: none; margin: 20px 0; padding: 0; }
 
@@ -233,3 +233,23 @@ select:focus-visible {
 .history-details:focus { outline: none; }
 .history-details:focus-visible { outline: 3px solid #bef264; outline-offset: 4px; border-radius: 16px; }
 .history-button { overflow-wrap: anywhere; }
+
+/* Days 10–11: quick set entry */
+.set-entry { margin: 20px 0; }
+.set-entry .form-heading { margin: 0 0 12px; }
+.set-entry input { min-height: 56px; font-size: 18px; font-variant-numeric: tabular-nums; }
+.set-entry .form-actions > button { min-height: 56px; }
+.set-entry .form-actions > button[type="submit"] { flex: 1; }
+.entry-shortcuts { display: flex; gap: 8px; flex-wrap: wrap; }
+.entry-shortcuts:empty { display: none; }
+.entry-shortcuts > button { flex: 1; }
+.copy-source, .entry-hint { font-size: 13px; margin: 10px 0; }
+.previous-overview { color: #d9e5f6; font-size: 14px; line-height: 1.6; margin: 8px 0; }
+.previous-details summary { min-height: 48px; padding: 12px 0; color: #c6d1e2; cursor: pointer; }
+.previous-details summary:focus-visible { outline: 3px solid #bef264; outline-offset: 3px; border-radius: 6px; }
+.logged-title { font-size: 16px; margin: 24px 0 0; }
+.logged-title + .set-list { margin-top: 8px; }
+@media (max-width: 480px) {
+  .entry-shortcuts > button { padding: 12px 10px; font-size: 14px; }
+  .set-entry .form-actions { flex-direction: column; }
+}
