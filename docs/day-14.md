@@ -1,6 +1,6 @@
 # Day 14: iPhone workout test
 
-Status: setup prepared; your actual iPhone workout is still pending.
+Status: passed on iPhone on 27 October 2026 (user-reported).
 
 The Mac's localhost URL is not the Mac when opened on an iPhone. To test offline
 reopening before deployment, use the secure local preview on the same Wi-Fi.
@@ -47,7 +47,7 @@ and setup page. Remove its profile after testing. The local CA expires in 90 day
 Keep using the same app address and Home Screen icon throughout the test. Mac
 workouts do not transfer to the phone yet; account sync is planned for Week 3.
 
-## Mock workout
+## Mock workout (repeatable checklist)
 
 Run the entire test from the Home Screen app. Use mock weights and reps; this
 check is about the logger.
@@ -69,12 +69,14 @@ wrong copy values, keyboard friction, small targets, or excessive scrolling.
 
 ## Test result
 
-- Date:
-- iPhone model / iOS:
-- Address used:
-- Offline reopening passed:
-- Workout saved and history correct:
-- Problems observed:
-- Follow-up fixes:
+- Date: 27 October 2026
+- Device: iPhone, Safari / Home Screen app
+- iPhone model / iOS: not provided
+- Address used: [https://anurags-macbook-air.local:5443](https://anurags-macbook-air.local:5443)
+- Offline reopening passed: Yes
+- Workout saved and history correct: Yes
+- Problems observed: None reported
+- Follow-up fixes: None reported
 
-Until this result is filled from a real device test, Day 14 remains pending.
+Day 14 is complete based on this user-reported physical iPhone test. Account
+login, server-side storage, and synchronization remain scheduled for Week 3.

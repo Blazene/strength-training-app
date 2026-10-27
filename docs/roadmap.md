@@ -13,7 +13,7 @@ future day requests rather than inferring a different order.
 | 8–9 | Completion, history, previous-session sets | Implemented and verified; dedicated history/details navigation completed |
 | 10–11 | Numeric keyboards, large buttons, focus, copy previous set | Implemented and verified: form stays near heading, saved values remain ready, keyboard focus and matching prior-set shortcut |
 | 12–13 | App caching, PWA, offline reopen | Implemented and verified in Chromium/WebKit; active-cache validation, repair, and stalled-network fallback added |
-| 14 | Full workout on the user's phone, ideally in the gym | iPhone HTTPS setup and test checklist prepared; actual phone/gym workout still pending |
+| 14 | Full workout on the user's phone, ideally in the gym | Passed on iPhone on 27 Oct 2026: offline reopening, saved workouts, and history correct; no issues reported |
 | 15–16 | PostgreSQL schema, Express validation/endpoints, account auth | Pending; backend currently has health endpoints |
 | 17–18 | Persistent local sync queue, upload and acknowledgement | Pending |
 | 19–20 | Idempotent retries, edits/deletions, pull after login | Pending |
