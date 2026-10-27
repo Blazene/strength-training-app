@@ -19,7 +19,7 @@ future day requests rather than inferring a different order.
 | 19 | Idempotent retries and safe edits/deletions | Implemented: persistent backoff, receipt replay, sequence guards, deletion markers, offline history deletion, and account isolation |
 | 20 | Pull server data after login and merge safely | Implemented: paginated downloads, atomic merge, preserved pending work/drafts, unfinished sessions, version-checked handoff and keep-both conflict recovery |
 | 21 | Interrupted requests, reconnect, save/sync indicators | Implemented and verified in Chromium/WebKit: immediate offline abort, partial-download safety, retry timing, confirmed sync state, and invalid-acknowledgement recovery |
-| 22–23 | Full offline/failure/session-expiry tests and data-loss fixes | Final reliability pass pending |
+| 22–23 | Full offline/failure/session-expiry tests and data-loss fixes | Implemented and verified: repository browser suite with isolated PostgreSQL, offline browser restarts, API restart/expiry recovery, atomic app updates, focus protection and sync-completion race fix |
 | 24–25 | Frontend/API/database hosting, HTTPS, production auth | Pending; choose hosting that fits free/no-payment-information preference |
 | 26 | Real workout with deployed version on phone | Pending |
 | 27 | README, setup, architecture, limits, screenshots | Pending final project documentation |

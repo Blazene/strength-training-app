@@ -37,3 +37,6 @@ Expected: eleven passing tests, no lint errors, and a build containing `dist/sw.
 The additional unit checks ensure the local phone preview serves build files with
 correct MIME types and rejects path traversal, symlink escapes, private files,
 and API routes.
+
+Days 22–23 add atomic app-shell replacement and interrupted-update/browser-restart
+regressions; see [Day 23](day-23.md) for current behavior.

@@ -30,6 +30,7 @@ export default function ExerciseCard({
   const [dirty, setDirty] = useState(false);
   const [savingSet, setSavingSet] = useState(false);
   const submitting = useRef(false);
+  const interaction = useRef(0);
   const weightInput = useRef<HTMLInputElement>(null);
   const repsInput = useRef<HTMLInputElement>(null);
 
@@ -61,9 +62,12 @@ export default function ExerciseCard({
   }, [focusEntry]);
 
   function focusWeight() {
-    // A pending save must not steal focus after the user switches to History.
+    // Cancel delayed focus if the person has chosen a different field or
+    // started typing since it was scheduled.
+    const focused = document.activeElement;
+    const version = interaction.current;
     requestAnimationFrame(() => {
-      if (!weightInput.current?.closest("[hidden]")) {
+      if (document.activeElement === focused && interaction.current === version && !weightInput.current?.closest("[hidden]")) {
         weightInput.current?.focus();
         weightInput.current?.select();
       }
@@ -75,6 +79,7 @@ export default function ExerciseCard({
   function setDraft(value: boolean) { markDraft(exercise.id,workoutId,value);setDirty(value); }
 
   function resetForm(template: WorkoutSet | null) {
+    interaction.current++;
     setWeight(template ? String(template.weightKg) : "");
     setReps(template ? String(template.reps) : "");
     setEditingId(null);
@@ -95,6 +100,7 @@ export default function ExerciseCard({
     }
 
     submitting.current = true;
+    const submittedInteraction = interaction.current;
     setSavingSet(true);
     setError(null);
     const savedSet: WorkoutSet = {
@@ -107,8 +113,7 @@ export default function ExerciseCard({
       if (saved) {
         const lastSet = exercise.sets.at(-1);
         const nextTemplate = editingId && lastSet && lastSet.id !== editingId ? lastSet : savedSet;
-        resetForm(nextTemplate);
-        focusWeight();
+        if (interaction.current === submittedInteraction) { resetForm(nextTemplate); focusWeight(); }
       } else {
         setError({ message: "Could not save this set. Your entries are still here. Try again." });
       }
@@ -126,6 +131,7 @@ export default function ExerciseCard({
   }
 
   function fillFromSet(set: WorkoutSet) {
+    interaction.current++;
     setDraft(true);
     setWeight(String(set.weightKg));
     setReps(String(set.reps));
@@ -238,13 +244,15 @@ export default function ExerciseCard({
               required
               placeholder="60"
               value={weight}
-              onFocus={(event) => event.currentTarget.select()}
+              onFocus={(event) => { interaction.current++; event.currentTarget.select(); }}
+              onPointerDown={() => { interaction.current++; }}
               onClick={(event) => {
                 const input = event.currentTarget;
+                const version = ++interaction.current;
                 // Safari may place the caret after its native tap handling.
-                requestAnimationFrame(() => { if (document.activeElement === input) input.select(); });
+                requestAnimationFrame(() => { if (document.activeElement === input && interaction.current === version) input.select(); });
               }}
-              onChange={(event) => { setDraft(true); setWeight(event.target.value); setError(null); }}
+              onChange={(event) => { interaction.current++; setDraft(true); setWeight(event.target.value); setError(null); }}
               onKeyDown={(event) => {
                 if (event.key === "Enter" && !event.nativeEvent.isComposing) {
                   event.preventDefault();
@@ -270,13 +278,15 @@ export default function ExerciseCard({
               required
               placeholder="8"
               value={reps}
-              onFocus={(event) => event.currentTarget.select()}
+              onFocus={(event) => { interaction.current++; event.currentTarget.select(); }}
+              onPointerDown={() => { interaction.current++; }}
               onClick={(event) => {
                 const input = event.currentTarget;
+                const version = ++interaction.current;
                 // Safari may place the caret after its native tap handling.
-                requestAnimationFrame(() => { if (document.activeElement === input) input.select(); });
+                requestAnimationFrame(() => { if (document.activeElement === input && interaction.current === version) input.select(); });
               }}
-              onChange={(event) => { setDraft(true); setReps(event.target.value); setError(null); }}
+              onChange={(event) => { interaction.current++; setDraft(true); setReps(event.target.value); setError(null); }}
               aria-invalid={error?.field === "reps"}
               aria-describedby={error?.field === "reps" ? errorId : undefined}
             />

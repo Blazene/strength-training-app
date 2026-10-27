@@ -120,7 +120,11 @@ export class SyncController {
         if(downloadError){this.publish({status:"retrying",error:downloadError});this.schedule(10000);return;}
         if(stored.metadata.deferred?.length){this.publish({status:"editing",error:"Save or cancel your unfinished entry to apply the waiting server update.",nextRetryAt:null});return;}
         const complete=await completeSync(user.id);stored=await readSyncState();if(!valid())return;this.showStored(stored);
-        if(!complete){this.rerun=true;return;}
+        // A save may commit after completeSync's transaction but before this
+        // final read. Its fresh queue state must win over the earlier result.
+        if(!complete||stored.pending.length||Object.keys(stored.metadata.conflicts??{}).length||stored.metadata.deferred?.length){
+          this.publish({status:"loading",error:"",nextRetryAt:null});this.rerun=true;return;
+        }
         this.publish({status:"synced",error:"",nextRetryAt:null});return;
       }
       this.publish({status:"syncing",error:downloadError,nextRetryAt:null});
