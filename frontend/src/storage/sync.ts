@@ -1,6 +1,9 @@
 import type { AccountUser } from "../utils/accountApi";
+import { allWorkouts, arrangeWorkouts, mergeRemote, snapshotText } from "../sync/merge";
+import { isRemoteWorkout } from "../sync/network";
+import { protectedWorkouts } from "../sync/drafts";
 import { isAccountUser } from "../sync/model";
-import type { PendingOperation, StoredSync, SyncMetadata, WorkoutSnapshot } from "../sync/model";
+import type { PendingOperation, RemoteWorkout, StoredSync, SyncMetadata, WorkoutSnapshot } from "../sync/model";
 import { isState, KEY, openDatabase, STORE } from "./workouts";
 import type { WorkoutState } from "./workouts";
 
@@ -12,9 +15,9 @@ const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const empty = (): WorkoutState => ({ revision: 0, active: null, history: [] });
 const pendingRange = () => IDBKeyRange.bound(PREFIX, PREFIX + "\uffff");
 
-function notify() {
-  window.dispatchEvent(new Event(STORAGE_EVENT));
-  try { localStorage.setItem(STORAGE_SIGNAL, crypto.randomUUID()); } catch { /* Same-tab syncing still works if localStorage is unavailable. */ }
+function notify(reason: "local" | "remote" | "ack" = "local") {
+  window.dispatchEvent(new CustomEvent(STORAGE_EVENT, { detail: reason }));
+  try { localStorage.setItem(STORAGE_SIGNAL, JSON.stringify({ id: crypto.randomUUID(), reason })); } catch { /* Same-tab syncing still works if localStorage is unavailable. */ }
 }
 function metadata(value: unknown): SyncMetadata {
   if (value === undefined) return { version: 1, owner: null, deviceId: crypto.randomUUID(), nextSequence: 0, snapshots: {}, lastSyncedAt: null };
@@ -26,6 +29,13 @@ function metadata(value: unknown): SyncMetadata {
     || !(result.lastSyncedAt === null || (typeof result.lastSyncedAt === "string" && Number.isFinite(Date.parse(result.lastSyncedAt))))) {
     throw new Error("Saved sync information could not be read. Your workouts have not been overwritten.");
   }
+  result.serverVersions ??= {};
+  result.conflicts ??= {};
+  result.deferred ??= [];
+  if (!result.conflicts || typeof result.conflicts!=="object" || Array.isArray(result.conflicts)
+    || !Object.entries(result.conflicts).every(([id,value])=>id===value?.id && isRemoteWorkout(value))
+    || !Array.isArray(result.deferred) || !result.deferred.every(id=>uuid.test(id))) throw new Error("Saved download information could not be read. Your workouts were kept.");
+  if (!Object.entries(result.serverVersions).every(([id,value])=>uuid.test(id) && Number.isSafeInteger(value) && value>=0)) throw new Error("Saved server versions could not be read.");
   return result;
 }
 function pending(value: unknown, meta: SyncMetadata): PendingOperation[] {
@@ -35,6 +45,7 @@ function pending(value: unknown, meta: SyncMetadata): PendingOperation[] {
       || !Number.isSafeInteger(operation.sequence) || operation.sequence < 1 || operation.sequence > meta.nextSequence
       || !uuid.test(operation.workoutId) || !["put", "delete"].includes(operation.kind)
       || (operation.kind === "delete" ? operation.workout !== null : operation.workout?.id !== operation.workoutId)
+      || !(operation.baseVersion===undefined || Number.isSafeInteger(operation.baseVersion) && operation.baseVersion>=0)
       || !Number.isSafeInteger(operation.attempts) || operation.attempts < 0 || !Number.isFinite(operation.nextAttemptAt)) {
       throw new Error("Saved changes could not be read safely. Your workouts are still on this device.");
     }
@@ -72,10 +83,9 @@ function read(store: IDBObjectStore, fail: (error: unknown) => void, callback: (
 }
 function enqueue(store: IDBObjectStore, meta: SyncMetadata, state: WorkoutState) {
   const snapshots = new Map<string, WorkoutSnapshot>();
-  for (const workout of [state.active, ...state.history]) {
-    if (!workout) continue;
+  for (const workout of allWorkouts(state)) {
     if (snapshots.has(workout.id)) throw new Error("Saved workouts have duplicate IDs. Nothing was overwritten.");
-    snapshots.set(workout.id, { ...workout, completedAt: "completedAt" in workout ? workout.completedAt as string : null });
+    snapshots.set(workout.id,workout);
   }
   for (const id of new Set([...Object.keys(meta.snapshots), ...snapshots.keys()])) {
     const workout = snapshots.get(id) ?? null;
@@ -84,7 +94,7 @@ function enqueue(store: IDBObjectStore, meta: SyncMetadata, state: WorkoutState)
     if (!Number.isSafeInteger(meta.nextSequence + 1)) throw new Error("The sync sequence is exhausted. Your last saved workout is unchanged.");
     const operation: PendingOperation = { id: crypto.randomUUID(), ownerId: meta.owner?.id ?? null,
       deviceId: meta.deviceId, sequence: ++meta.nextSequence, workoutId: id,
-      kind: workout ? "put" : "delete", workout, createdAt: new Date().toISOString(),
+      kind: workout ? "put" : "delete", workout, baseVersion: meta.serverVersions?.[id] ?? 0, createdAt: new Date().toISOString(),
       attempts: 0, nextAttemptAt: 0, blocked: false, error: "" };
     store.put(operation, PREFIX + operation.id);
     meta.snapshots[id] = serialized;
@@ -125,7 +135,7 @@ export async function bindSyncAccount(user: AccountUser): Promise<void> {
   }));
   notify();
 }
-export async function acknowledge(operation: PendingOperation): Promise<void> {
+export async function acknowledge(operation: PendingOperation, version: number | null = null): Promise<void> {
   await transaction<void>((store, done, fail) => read(store, fail, (state, meta) => {
     enqueue(store, meta, state);
     if (!operation.ownerId || meta.owner?.id !== operation.ownerId || meta.deviceId !== operation.deviceId) throw new Error("The sync account changed. Saved changes were kept.");
@@ -137,11 +147,15 @@ export async function acknowledge(operation: PendingOperation): Promise<void> {
         for (const item of pending(request.result, meta)) {
           if (item.workoutId === operation.workoutId && item.sequence <= operation.sequence) store.delete(PREFIX + item.id);
         }
+        if (version !== null) {
+          meta.serverVersions ??= {};
+          meta.serverVersions[operation.workoutId] = Math.max(meta.serverVersions[operation.workoutId] ?? 0,version);
+        }
         meta.lastSyncedAt = new Date().toISOString(); store.put(meta, META); done();
       } catch (error) { fail(error); }
     };
   }));
-  notify();
+  notify("ack");
 }
 export async function recordSyncFailure(operation: PendingOperation, error: string, nextAttemptAt: number, blocked: boolean) {
   await transaction<void>((store, done) => {
@@ -151,4 +165,68 @@ export async function recordSyncFailure(operation: PendingOperation, error: stri
       done();
     };
   });
+}
+
+export async function mergeDownloads(accountId: string, entries: RemoteWorkout[]) {
+  let changed = false;
+  await transaction<void>((store,done,fail)=>read(store,fail,(state,meta)=>{
+    if (meta.owner?.id !== accountId) throw new Error("The sync account changed. Downloaded data was not imported.");
+    enqueue(store,meta,state);
+    const request = store.getAll(pendingRange());
+    request.onsuccess = () => {
+      try {
+        const merged = mergeRemote(state,meta,pending(request.result,meta),entries,protectedWorkouts());
+        merged.metadata.lastPulledAt = new Date().toISOString();
+        store.put(merged.metadata,META);
+        if (merged.changed) { store.put(merged.state,KEY); changed = true; }
+        done();
+      } catch(error) { fail(error); }
+    };
+  }));
+  if (changed) notify("remote");
+}
+export async function completeSync(accountId: string): Promise<boolean> {
+  return transaction<boolean>((store,done,fail)=>read(store,fail,(state,meta)=>{
+    if (meta.owner?.id!==accountId) throw new Error("The sync account changed.");
+    enqueue(store,meta,state);
+    const request=store.getAll(pendingRange());
+    request.onsuccess=()=>{
+      try {
+        const complete=pending(request.result,meta).length===0 && !Object.keys(meta.conflicts??{}).length && !meta.deferred?.length;
+        if (complete) meta.lastCompletedAt=new Date().toISOString();
+        store.put(meta,META);done(complete);
+      } catch(error){fail(error);}
+    };
+  }));
+}
+export async function keepBothVersions(accountId: string, id: string) {
+  await transaction<void>((store,done,fail)=>read(store,fail,(state,meta)=>{
+    if (meta.owner?.id!==accountId) throw new Error("Sign in to the linked account to resolve this workout.");
+    if (protectedWorkouts().has(id)) throw new Error("Save or cancel the unfinished set before keeping both versions.");
+    enqueue(store,meta,state);
+    const remote = meta.conflicts?.[id];
+    if (!remote) { done(); return; }
+    const workouts = new Map(allWorkouts(state).map(workout=>[workout.id,workout]));
+    const local = workouts.get(id);
+    let copy: WorkoutSnapshot | null = null;
+    if (local) {
+      copy = { ...local, id: crypto.randomUUID(), exercises: local.exercises.map(exercise=>({ ...exercise,id:crypto.randomUUID(),sets:exercise.sets.map(set=>({ ...set,id:crypto.randomUUID() })) })) };
+      workouts.set(copy.id,copy);
+    }
+    if (remote.deleted) workouts.delete(id); else workouts.set(id,remote.workout!);
+    const next = { ...arrangeWorkouts(state,workouts,state.active?.id===id ? copy?.id : state.active?.id), revision:state.revision+1 };
+    const request = store.getAll(pendingRange());
+    request.onsuccess = () => {
+      try {
+        for (const operation of pending(request.result,meta)) if (operation.workoutId===id) store.delete(PREFIX+operation.id);
+        meta.serverVersions ??= {}; meta.serverVersions[id] = remote.version;
+        const actual = new Map(allWorkouts(next).map(workout=>[workout.id,workout]));
+        meta.snapshots[id] = snapshotText(actual.get(id)??null);
+        delete meta.conflicts![id];
+        enqueue(store,meta,next);
+        store.put(next,KEY);store.put(meta,META);done();
+      } catch(error) { fail(error); }
+    };
+  }));
+  notify("remote"); notify();
 }

@@ -4,6 +4,7 @@ import type { AccountUser } from "../utils/accountApi";
 export type WorkoutSnapshot = Workout & { completedAt: string | null };
 export type PendingOperation = {
   id: string;
+  baseVersion?: number;
   ownerId: string | null;
   deviceId: string;
   sequence: number;
@@ -25,6 +26,11 @@ export type SyncMetadata = {
   // older app tab that does not yet know about the queue.
   snapshots: Record<string, string | null>;
   lastSyncedAt: string | null;
+  serverVersions?: Record<string, number>;
+  conflicts?: Record<string, RemoteWorkout>;
+  deferred?: string[];
+  lastPulledAt?: string | null;
+  lastCompletedAt?: string | null;
 };
 export type StoredSync = { metadata: SyncMetadata; pending: PendingOperation[] };
 
@@ -44,3 +50,12 @@ export function isAccountUser(value: unknown): value is AccountUser {
   const user = value as AccountUser;
   return typeof user.id === "string" && !!user.id && typeof user.name === "string" && typeof user.email === "string";
 }
+
+export type RemoteWorkout = {
+  id: string;
+  deviceId: string | null;
+  sequence: number;
+  version: number;
+  deleted: boolean;
+  workout: WorkoutSnapshot | null;
+};

@@ -8,11 +8,11 @@ export async function lockSyncAccount(client: PoolClient, userId: string) {
 }
 async function directWriteAllowed(client: PoolClient, userId: string, id: string) {
   await lockSyncAccount(client, userId);
-  if ((await client.query("SELECT 1 FROM workout_sync_state WHERE user_id=$1 AND workout_id=$2", [userId, id])).rowCount) {
+  if ((await client.query("SELECT 1 FROM workout_sync_state WHERE user_id=$1 AND workout_id=$2 AND device_id IS NOT NULL", [userId, id])).rowCount) {
     throw new WorkoutConflict("Use the sync endpoint to change this synced workout. Pending changes and deletion records must be preserved.");
   }
 }
-export async function getWorkout(db: Database, userId: string, id: string) {
+export async function getWorkouts(db: Database, userId: string, ids: string[]) {
   const result = await db.query(`
     SELECT w.id, w.started_at, w.completed_at,
       COALESCE((SELECT jsonb_agg(jsonb_build_object(
@@ -21,10 +21,12 @@ export async function getWorkout(db: Database, userId: string, id: string) {
           FROM workout_sets s WHERE s.user_id = we.user_id AND s.workout_exercise_id = we.id), '[]'::jsonb)
       ) ORDER BY we.position) FROM workout_exercises we JOIN exercises e ON e.id = we.exercise_id
         WHERE we.user_id = w.user_id AND we.workout_id = w.id), '[]'::jsonb) AS exercises
-    FROM workouts w WHERE w.user_id = $1 AND w.id = $2`, [userId, id]);
-  const row = result.rows[0];
-  return row ? { id: row.id as string, startedAt: (row.started_at as Date).toISOString(),
-    completedAt: row.completed_at ? (row.completed_at as Date).toISOString() : null, exercises: row.exercises } : null;
+    FROM workouts w WHERE w.user_id = $1 AND w.id = ANY($2::uuid[])`, [userId, ids]);
+  return result.rows.map(row => ({ id: row.id as string, startedAt: (row.started_at as Date).toISOString(),
+    completedAt: row.completed_at ? (row.completed_at as Date).toISOString() : null, exercises: row.exercises }));
+}
+export async function getWorkout(db: Database, userId: string, id: string) {
+  return (await getWorkouts(db, userId, [id]))[0] ?? null;
 }
 export async function listWorkouts(db: Database, userId: string, limit: number, offset: number) {
   const result = await db.query(`SELECT w.id, w.started_at, w.completed_at,
@@ -63,6 +65,8 @@ export async function putWorkout(pool: Pool, userId: string, workout: WorkoutInp
     await client.query("BEGIN");
     await directWriteAllowed(client, userId, workout.id);
     const saved = await replaceWorkout(client, userId, workout);
+    await client.query(`INSERT INTO workout_sync_state(user_id,workout_id,device_id,sequence,deleted,version) VALUES($1,$2,NULL,1,false,1)
+      ON CONFLICT(user_id,workout_id) DO UPDATE SET deleted=false,version=workout_sync_state.version+1,updated_at=now()`, [userId,workout.id]);
     await client.query("COMMIT");
     return saved;
   } catch (error) { await client.query("ROLLBACK"); throw error; }
@@ -79,6 +83,8 @@ export async function deleteDirectWorkout(pool: Pool, userId: string, id: string
     await client.query("BEGIN");
     await directWriteAllowed(client, userId, id);
     const removed = await deleteWorkout(client, userId, id);
+    if (removed) await client.query(`INSERT INTO workout_sync_state(user_id,workout_id,device_id,sequence,deleted,version) VALUES($1,$2,NULL,1,true,1)
+      ON CONFLICT(user_id,workout_id) DO UPDATE SET deleted=true,version=workout_sync_state.version+1,updated_at=now()`, [userId,id]);
     await client.query("COMMIT");
     return removed;
   } catch (error) { await client.query("ROLLBACK"); throw error; }

@@ -28,32 +28,38 @@ rows is one transaction. Owner/timeline and parent/order indexes support queries
 and cascading deletes. The server derives owner IDs from the verified session;
 clients cannot assign ownership through JSON fields.
 
-## Local storage and synchronization (Days 17–19)
+## Local storage and synchronization (Days 17–21)
 
-The version-1 IndexedDB `workouts` store retains `state` (revision, active workout,
-completed history). Additional keys hold `sync:metadata` and immutable pending
+The version-2 IndexedDB database keeps the existing `workouts` store and retains `state` (revision, active workout,
+completed history, optional other unfinished workouts). Additional keys hold `sync:metadata` and immutable pending
 operations under `sync:pending:<UUID>`. State and its operations commit together.
 The UI's unfinished form inputs remain in React state.
 
 Metadata records the stable device UUID, monotonic sequence, explicitly linked
-account, exact serialized snapshots and last server-confirmed upload time. Old
+account, exact serialized snapshots, server versions, conflict/deferred records,
+and last upload/download/complete-sync times. Old
 workouts migrate into the queue without changing `state`; signing in alone does
 not upload them. Once the user enables sync, ownership persists through logout,
 offline logging and session expiry. Another account cannot claim those operations.
 
 Each pending operation has its UUID, owner/device, sequence, workout UUID,
-put/delete action, complete snapshot, and persistent attempt/backoff/error fields.
+put/delete action, complete snapshot, optional base version, and persistent
+attempt/backoff/error fields.
 The newest snapshot covers older changes to the same workout. Only a valid server
 acknowledgement lets the client remove that operation and covered older entries.
-Newer concurrent saves stay pending. Comparing exact snapshots also detects
+Newer concurrent saves stay pending. Explicit keep-both resolution atomically
+replaces a conflicting queued intent with a separate saved copy and its new queue
+entry; a failed resolution changes neither. Comparing exact snapshots also detects
 writes from an older cached app that does not yet write queue entries.
 
 ## Server synchronization tables
 
 - `sync_operations`: (user_id, operation_id) primary key, normalized request hash,
-  workout/device IDs, sequence, applied/superseded outcome and receipt time.
-- `workout_sync_state`: (user_id, workout_id) primary key, original device,
-  highest applied sequence, deletion flag and update time. It intentionally has
+  workout/device IDs, sequence, applied/superseded outcome, acknowledged version,
+  and receipt time. Old receipts retain their original hash and nullable version.
+- `workout_sync_state`: (user_id, workout_id) primary key, current logging device
+  (nullable for direct-API records), its highest applied sequence, server version,
+  deletion flag and update time. It intentionally has
   no foreign key to workouts, so deletion markers survive parent removal.
 
 A transaction commits normalized workout changes, sync state and receipt
@@ -62,13 +68,26 @@ an existing ID conflict. Older sequences cannot replace newer data. Direct
 PUT/DELETE endpoints cannot bypass sync state. Account foreign keys cascade only
 when the account itself is deleted. Receipts and deletion markers are retained.
 
-The API verifies session ownership and the expected account on each upload.
-Version 1 uses one logging device/account; attempting to sync an existing workout
-from a different device conflicts rather than overwriting it. Uploads resume while
-the app is open. Service workers cache the app and exclude API responses.
+The API verifies session ownership and the expected account on each upload and
+download page. A fresh base version allows a handoff to another logging device;
+stale device writes conflict. Direct API writes also record versions/tombstones
+until sync takes control of that workout. Use one logging device at a time.
 
-Day 20 will add server retrieval and safe merging after login. There is currently
-no automatic download to a new device and no simultaneous-device editing.
+Downloads are keyset-paginated by workout UUID. Each page reads one database
+snapshot; all pages must validate before one local merge transaction. Pending
+local edits and deletions remain protected, and clean imported snapshots become
+the new baseline without creating upload operations. Missing IDs never imply
+deletion. Server deletion markers remove clean local copies. Unsaved form inputs
+wait for Save/Cancel/Reset before their workout can be replaced.
+
+The current active workout remains selected, with other unfinished sessions in
+`otherActive`. History uses completed workouts only. A successful remote merge
+updates React state; revision checks still prevent a stale write.
+
+Sync checks on app opening, reconnecting, returning, saving, and manual retry.
+It does not depend on the app running after it closes. A complete-sync marker
+requires no pending operations, conflicts, or deferred updates. Service workers
+cache app files and exclude API responses.
 
 ## Previous-session lookup
 

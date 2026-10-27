@@ -70,7 +70,7 @@ export default function AccountPanel({ sync }: { sync: WorkoutSync }) {
           </form>
         ) : null}
         {error ? <p className="error" role="alert">{error}</p> : null}
-        <p className="muted">Workouts save on this device first. Enable sync below to upload them to your account. Closing the app pauses uploads; saved changes resume next time you open it online.</p>
+        <p className="muted">Workouts save on this device first. With sync enabled, changes upload and your account workouts download while the app is open and connected. Saved changes resume next time you open it online.</p>
       </section>
     </details>
   );

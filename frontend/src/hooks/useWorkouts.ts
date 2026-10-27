@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { loadWorkouts } from "../storage/workouts";
+import { STORAGE_EVENT, STORAGE_SIGNAL } from "../storage/sync";
 import { saveWorkouts } from "../storage/sync";
 import type { WorkoutState } from "../storage/workouts";
 
@@ -11,6 +12,8 @@ export function useWorkouts() {
   const [attempt, setAttempt] = useState(0);
   const current = useRef(state);
   const busy = useRef(false);
+  const needsRefresh = useRef(false);
+  const refreshSaved = useRef<()=>Promise<void>>(async()=>{});
 
   useEffect(() => {
     let cancelled = false;
@@ -24,6 +27,23 @@ export function useWorkouts() {
     });
     return () => { cancelled = true; };
   }, [attempt]);
+
+  useEffect(() => {
+    let cancelled=false;
+    async function refresh() {
+      if (busy.current) { needsRefresh.current=true;return; }
+      try {
+        const loaded=await loadWorkouts();
+        if (busy.current) { needsRefresh.current=true;return; }
+        if (!cancelled && loaded.revision>current.current.revision) { current.current=loaded;setState(loaded); }
+      } catch { /* Existing state and the normal save error remain available. */ }
+    }
+    refreshSaved.current=refresh;
+    const changed=(event:Event)=>{if((event as CustomEvent<string>).detail==="remote")void refresh();};
+    const storage=(event:StorageEvent)=>{if(event.key===STORAGE_SIGNAL)void refresh();};
+    window.addEventListener(STORAGE_EVENT,changed);window.addEventListener("storage",storage);
+    return()=>{cancelled=true;window.removeEventListener(STORAGE_EVENT,changed);window.removeEventListener("storage",storage);};
+  },[]);
 
   async function commit(update: (state: WorkoutState) => WorkoutState): Promise<boolean> {
     if (!ready || busy.current) return false;
@@ -42,6 +62,7 @@ export function useWorkouts() {
     } finally {
       busy.current = false;
       setSaving(false);
+      if (needsRefresh.current) { needsRefresh.current=false;void refreshSaved.current(); }
     }
   }
 

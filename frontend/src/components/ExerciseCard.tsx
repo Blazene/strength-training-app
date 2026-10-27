@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { markDraft } from "../sync/drafts";
 import type { FormEvent } from "react";
 import type { WorkoutExercise, WorkoutSet } from "../types/workout";
 import type { PreviousSession } from "../utils/workoutHistory";
@@ -6,6 +7,7 @@ import { parseSetInput } from "../utils/setInput";
 import type { SetInputError } from "../utils/setInput";
 
 type Props = {
+  workoutId: string;
   exercise: WorkoutExercise;
   previousSession: PreviousSession | null;
   focusEntry?: boolean;
@@ -14,6 +16,7 @@ type Props = {
 };
 
 export default function ExerciseCard({
+  workoutId,
   exercise,
   previousSession,
   focusEntry = false,
@@ -24,6 +27,7 @@ export default function ExerciseCard({
   const [reps, setReps] = useState(() => String(exercise.sets.at(-1)?.reps ?? ""));
   const [editingId, setEditingId] = useState<string | null>(null);
   const [error, setError] = useState<SetInputError | null>(null);
+  const [dirty, setDirty] = useState(false);
   const [savingSet, setSavingSet] = useState(false);
   const submitting = useRef(false);
   const weightInput = useRef<HTMLInputElement>(null);
@@ -36,6 +40,18 @@ export default function ExerciseCard({
     ? Math.min(exercise.sets.length, previousSession.sets.length - 1)
     : -1;
   const previousSet = previousSession?.sets[previousIndex];
+  const lastSaved = exercise.sets.at(-1);
+  const template = JSON.stringify([lastSaved?.id,lastSaved?.weightKg,lastSaved?.reps]);
+  const [previousTemplate,setPreviousTemplate] = useState(template);
+  // Keep a clean entry aligned with downloaded sets. Unsaved values and edits
+  // remain controlled by the person using the form.
+  if (previousTemplate!==template) {
+    setPreviousTemplate(template);
+    if (!dirty && !savingSet && editingId===null) {
+      setWeight(String(lastSaved?.weightKg??""));setReps(String(lastSaved?.reps??""));
+    }
+  }
+
 
   useEffect(() => {
     if (focusEntry && !weightInput.current?.closest("[hidden]")) {
@@ -54,11 +70,16 @@ export default function ExerciseCard({
     });
   }
 
+  useEffect(() => () => markDraft(exercise.id,workoutId,false), [exercise.id,workoutId]);
+
+  function setDraft(value: boolean) { markDraft(exercise.id,workoutId,value);setDirty(value); }
+
   function resetForm(template: WorkoutSet | null) {
     setWeight(template ? String(template.weightKg) : "");
     setReps(template ? String(template.reps) : "");
     setEditingId(null);
     setError(null);
+    setDraft(false);
   }
 
   async function saveSet(event: FormEvent<HTMLFormElement>) {
@@ -105,6 +126,7 @@ export default function ExerciseCard({
   }
 
   function fillFromSet(set: WorkoutSet) {
+    setDraft(true);
     setWeight(String(set.weightKg));
     setReps(String(set.reps));
     setError(null);
@@ -222,7 +244,7 @@ export default function ExerciseCard({
                 // Safari may place the caret after its native tap handling.
                 requestAnimationFrame(() => { if (document.activeElement === input) input.select(); });
               }}
-              onChange={(event) => { setWeight(event.target.value); setError(null); }}
+              onChange={(event) => { setDraft(true); setWeight(event.target.value); setError(null); }}
               onKeyDown={(event) => {
                 if (event.key === "Enter" && !event.nativeEvent.isComposing) {
                   event.preventDefault();
@@ -254,7 +276,7 @@ export default function ExerciseCard({
                 // Safari may place the caret after its native tap handling.
                 requestAnimationFrame(() => { if (document.activeElement === input) input.select(); });
               }}
-              onChange={(event) => { setReps(event.target.value); setError(null); }}
+              onChange={(event) => { setDraft(true); setReps(event.target.value); setError(null); }}
               aria-invalid={error?.field === "reps"}
               aria-describedby={error?.field === "reps" ? errorId : undefined}
             />
@@ -267,6 +289,7 @@ export default function ExerciseCard({
           <button type="submit" disabled={savingSet}>
             {savingSet ? "Saving…" : editingId ? "Save changes" : "Add set"}
           </button>
+          {dirty && !editingId ? <button type="button" className="secondary" onClick={()=>{resetForm(exercise.sets.at(-1)??null);focusWeight();}}>Reset entry</button> : null}
           {editingId ? (
             <button
               type="button"
@@ -277,6 +300,7 @@ export default function ExerciseCard({
             </button>
           ) : null}
         </div>
+        {dirty ? <p className="muted" role="status">Unsaved entry · Tap Add set or Save changes to keep it.</p> : null}
         {!editingId && exercise.sets.length > 0 ? (
           <p className="muted entry-hint">Values are ready for your next set. Adjust them or tap Add set again.</p>
         ) : null}

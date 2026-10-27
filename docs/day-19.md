@@ -55,6 +55,6 @@ same hostname as your saved workouts. Sign in, enable sync, and wait for
 **Synced to your email**. Log an offline mock set, close and reopen, reconnect on
 the same Wi-Fi, and check that the pending count reaches zero.
 
-Day 20 still needs server-to-device history retrieval and careful local merging.
-A new phone/browser does not yet download old server workouts after login. Do not
-clear website data or remove the installed app to test this upload-only milestone.
+This was the upload-only milestone. Days 20–21 now add downloads, version-checked
+handoffs, and safe merging; see [Day 20](day-20.md) and [Day 21](day-21.md).
+Keep the same address and website data when updating an existing installation.

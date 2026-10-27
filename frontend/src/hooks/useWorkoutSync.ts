@@ -9,6 +9,6 @@ export function useWorkoutSync(ready: boolean) {
     controller.start();
     return controller.stop;
   }, [controller, ready]);
-  return { ...view, retry: controller.retry, enable: controller.enable, sessionChanged: controller.sessionChanged };
+  return { ...view, retry: controller.retry, enable: controller.enable, sessionChanged: controller.sessionChanged, keepBoth: controller.keepBoth };
 }
 export type WorkoutSync = ReturnType<typeof useWorkoutSync>;

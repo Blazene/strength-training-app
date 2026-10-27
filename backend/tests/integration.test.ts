@@ -17,7 +17,7 @@ test("PostgreSQL accounts, isolation, validated CRUD and sessions",{skip:!databa
     await migrate(pool,config);await migrate(pool,config);assert.equal((await pool.query("SELECT count(*)::int AS count FROM exercises")).rows[0].count,8);
     server=createApp(pool,config).listen(0,"127.0.0.1");await once(server,"listening");const address=server.address();if(!address||typeof address==="string")throw new Error("No test port");port=address.port;origin=`http://127.0.0.1:${port}`;config.origins.splice(0,config.origins.length,origin,origin.replace("http:","https:"));
     const call=async(path:string,method="GET",body?:unknown,cookie?:string,extra:Record<string,string>={})=>{
-      const r=await fetch(origin+path,{method,headers:{origin,...(body!==undefined?{"content-type":"application/json"}:{}),...(cookie?{cookie}:{}),...extra},body:body!==undefined?JSON.stringify(body):undefined});
+      const r=await fetch(origin+path,{method,headers:{origin,...(path==="/api/sync"?{"x-strength-sync-protocol":"2"}:{}),...(body!==undefined?{"content-type":"application/json"}:{}),...(cookie?{cookie}:{}),...extra},body:body!==undefined?JSON.stringify(body):undefined});
       const text=await r.text();return{status:r.status,data:text?JSON.parse(text):null,cookies:r.headers.getSetCookie()};
     };
     await t.test("rejects unauthenticated, forged host and cross-origin requests",async()=>{
@@ -64,6 +64,9 @@ test("PostgreSQL accounts, isolation, validated CRUD and sessions",{skip:!databa
       const operation={accountId:a.user.id,id:randomUUID(),deviceId,sequence:1,workoutId:syncId,kind:"put",workout:data};
       const send=(body:unknown,cookie=a.cookie)=>call("/api/sync","POST",body,cookie);
       const first=await send(operation);assert.equal(first.status,200);assert.equal(first.data.replayed,false);
+      const oldClient=await call("/api/sync","POST",{...operation,id:randomUUID(),sequence:2,kind:"delete",workout:null},a.cookie,{"x-strength-sync-protocol":"1"});assert.equal(oldClient.status,409);
+      const oldRetry=await call("/api/sync","POST",operation,a.cookie,{"x-strength-sync-protocol":"1"});assert.equal(oldRetry.status,200);assert.equal(oldRetry.data.replayed,true);
+      assert.equal((await call(`/api/workouts/${syncId}`,"GET",undefined,a.cookie)).status,200);
       assert.equal((await send(operation)).data.replayed,true);
       assert.equal((await send({...operation,sequence:2})).status,409);
       assert.equal((await send(operation,b.cookie)).status,403);
@@ -93,6 +96,57 @@ test("PostgreSQL accounts, isolation, validated CRUD and sessions",{skip:!databa
       assert.equal((await send({...operation,accountId:b.user.id},b.cookie)).status,200);
       assert.equal((await call(`/api/workouts/${syncId}`,"GET",undefined,a.cookie)).status,404);
       assert.equal((await call(`/api/workouts/${syncId}`,"GET",undefined,b.cookie)).status,200);
+    });
+    await t.test("versioned downloads permit a fresh handoff and reject stale device writes",async()=>{
+      const id=randomUUID(),firstDevice=randomUUID(),secondDevice=randomUUID();
+      const snapshot={...structuredClone(workout),id,exercises:[{id:randomUUID(),exerciseId:"squat",sets:[{id:randomUUID(),weightKg:80,reps:5}]}]};
+      const first={accountId:a.user.id,id:randomUUID(),deviceId:firstDevice,sequence:1,workoutId:id,kind:"put",workout:snapshot,baseVersion:0};
+      assert.equal((await call("/api/sync","POST",first,a.cookie)).data.version,1);
+      const second={...structuredClone(first),id:randomUUID(),deviceId:secondDevice,baseVersion:1};second.workout.exercises[0].sets[0].weightKg=85;
+      assert.equal((await call("/api/sync","POST",second,a.cookie)).data.version,2);
+      assert.equal((await call("/api/sync","POST",{...first,id:randomUUID(),sequence:2,baseVersion:1},a.cookie)).status,409);
+      const replay=await call("/api/sync","POST",first,a.cookie);assert.equal(replay.data.replayed,true);assert.equal(replay.data.version,1);
+      assert.equal((await call(`/api/workouts/${id}`,"GET",undefined,a.cookie)).data.workout.exercises[0].sets[0].weightKg,85);
+      assert.equal((await call("/api/sync","POST",{...second,id:randomUUID(),sequence:2,baseVersion:99},a.cookie)).status,409);
+      const offlineEdit={...second,id:randomUUID(),sequence:2};assert.equal((await call("/api/sync","POST",offlineEdit,a.cookie)).data.version,3);
+      const deletion={...second,id:randomUUID(),sequence:3,kind:"delete",workout:null};assert.equal((await call("/api/sync","POST",deletion,a.cookie)).data.version,4);
+      const alreadyDeleted=await call("/api/sync","POST",{...deletion,id:randomUUID(),deviceId:firstDevice,sequence:20,baseVersion:1},a.cookie);
+      assert.equal(alreadyDeleted.status,200);assert.equal(alreadyDeleted.data.outcome,"superseded");assert.equal(alreadyDeleted.data.version,4);
+      assert.equal((await pool.query("SELECT device_id FROM workout_sync_state WHERE user_id=$1 AND workout_id=$2",[a.user.id,id])).rows[0].device_id,secondDevice);
+    });
+    await t.test("upgrade preserves old receipts and pre-sync workouts",async()=>{
+      const before=(await pool.query("SELECT count(*)::int AS count FROM workouts")).rows[0].count;
+      await pool.query("ALTER TABLE sync_operations DROP COLUMN version; ALTER TABLE workout_sync_state DROP COLUMN version; DELETE FROM app_migrations WHERE name='003_downloads.sql'");
+      const legacyId=randomUUID();await pool.query("INSERT INTO workouts(user_id,id,started_at) VALUES($1,$2,now())",[a.user.id,legacyId]);
+      await migrate(pool,config);await migrate(pool,config);
+      assert.equal((await pool.query("SELECT count(*)::int AS count FROM workouts")).rows[0].count,before+1);
+      const legacy=(await pool.query("SELECT device_id,version FROM workout_sync_state WHERE user_id=$1 AND workout_id=$2",[a.user.id,legacyId])).rows[0];assert.equal(legacy.device_id,null);assert.equal(Number(legacy.version),1);
+      // Receipt hashes from the previous protocol omit baseVersion. Their
+      // historical result remains replayable after adding version metadata.
+      const receipt=(await pool.query("SELECT operation_id,request_hash FROM sync_operations WHERE user_id=$1 LIMIT 1",[a.user.id])).rows[0];assert(receipt);
+      assert.equal((await pool.query("SELECT version FROM sync_operations WHERE user_id=$1 AND operation_id=$2",[a.user.id,receipt.operation_id])).rows[0].version,null);
+    });
+    await t.test("download pages include tombstones, exact account assertions and ordered nested sets",async()=>{
+      const added=[];
+      for(let index=0;index<23;index++){
+        const id=randomUUID();added.push(id);assert.equal((await call(`/api/workouts/${id}`,"PUT",{id,startedAt:"2026-10-27T09:00:00.000Z",completedAt:null,exercises:[]},a.cookie)).status,200);
+      }
+      const deleted=added[0];await call(`/api/workouts/${deleted}`,"DELETE",undefined,a.cookie);
+      const entries=[];let cursor:string|null=null;
+      do {
+        const response=await call(`/api/sync/workouts?accountId=${a.user.id}&limit=2${cursor?`&cursor=${cursor}`:""}`,"GET",undefined,a.cookie);
+        assert.equal(response.status,200);assert.equal(response.data.accountId,a.user.id);assert(response.data.entries.length<=2);
+        entries.push(...response.data.entries);cursor=response.data.nextCursor;
+      }while(cursor);
+      assert.equal(new Set(entries.map(entry=>entry.id)).size,entries.length);
+      assert.deepEqual(entries.map(entry=>entry.id),entries.map(entry=>entry.id).sort());
+      assert(added.every(id=>entries.some(entry=>entry.id===id)));
+      assert.equal(entries.find(entry=>entry.id===deleted).deleted,true);assert.equal(entries.find(entry=>entry.id===deleted).workout,null);
+      const bEntries=(await call(`/api/sync/workouts?accountId=${b.user.id}`,"GET",undefined,b.cookie)).data.entries;assert(!bEntries.some((entry:{id:string})=>added.includes(entry.id)));
+      assert.equal((await call(`/api/sync/workouts?accountId=${a.user.id}`,"GET",undefined,b.cookie)).status,403);
+      assert.equal((await call(`/api/sync/workouts?accountId=${a.user.id}&cursor=bad`,"GET",undefined,a.cookie)).status,400);
+      assert.equal((await call(`/api/sync/workouts?accountId=${a.user.id}&limit=0`,"GET",undefined,a.cookie)).status,400);
+      assert.equal((await call(`/api/sync/workouts?accountId=${a.user.id}`)).status,401);
     });
     await t.test("sign-out and expiry prevent reuse of sessions",async()=>{
       assert.equal((await call("/api/auth/sign-out","POST",{},a.cookie)).status,200);assert.equal((await call("/api/me","GET",undefined,a.cookie)).status,401);

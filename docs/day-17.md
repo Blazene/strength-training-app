@@ -30,3 +30,6 @@ account pauses uploads and cannot claim that queue. Account switching with
 separate local datasets belongs to later work; use one logging device/account.
 
 Browser transactions follow the [IndexedDB transaction lifecycle](https://www.w3.org/TR/IndexedDB/#transaction-lifecycle).
+
+Day 20 upgrades the same database to version 2 to prevent outdated tabs from
+writing the newer unfinished-session format; existing records remain intact.

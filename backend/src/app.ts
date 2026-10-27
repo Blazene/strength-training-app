@@ -4,7 +4,7 @@ import { fromNodeHeaders, toNodeHandler } from "better-auth/node";
 import type { Pool } from "pg";
 import { createAuthFactory } from "./auth.js";
 import type { AppConfig } from "./config.js";
-import { applySyncOperation, parseSyncOperation, SyncConflict } from "./sync.js";
+import { applySyncOperation, downloadWorkouts, parseSyncOperation, SyncConflict } from "./sync.js";
 import { exercises } from "./exercises.js";
 import { InputError, pagination, parseWorkout, validId } from "./validation.js";
 import { deleteDirectWorkout, getWorkout, listWorkouts, putWorkout, WorkoutConflict } from "./workouts.js";
@@ -50,11 +50,18 @@ export function createApp(pool: Pool, config: AppConfig) {
   });
   const owner = (res: Response): string => res.locals.user.id as string;
   app.get("/api/me", (_req, res) => res.json({ user: res.locals.user }));
+  app.get("/api/sync/workouts", async (req, res) => {
+    if (req.query.accountId !== owner(res)) { res.status(403).json({ error: "Sign in to the account linked to these workouts." }); return; }
+    const cursor = req.query.cursor;
+    if (cursor !== undefined && !validId(cursor)) { res.status(400).json({ error: "Download cursor must be a UUID." }); return; }
+    const { limit } = pagination({ limit: req.query.limit ?? "20" });
+    res.json(await downloadWorkouts(pool, owner(res), cursor as string ?? null, Math.min(limit,50)));
+  });
   app.post("/api/sync", async (req, res) => {
     const operation = parseSyncOperation(req.body);
     // Assert the expected account; only the verified session chooses the owner.
     if (operation.accountId !== owner(res)) { res.status(403).json({ error: "Sign in to the account linked to these saved workouts." }); return; }
-    res.json(await applySyncOperation(pool, owner(res), operation));
+    res.json(await applySyncOperation(pool, owner(res), operation, req.get("x-strength-sync-protocol")==="2"));
   });
   app.get("/api/exercises", (_req, res) => res.json({ exercises }));
   app.get("/api/workouts", async (req, res) => {

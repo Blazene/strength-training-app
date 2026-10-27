@@ -4,6 +4,7 @@ export type WorkoutState = {
   revision: number;
   active: Workout | null;
   history: CompletedWorkout[];
+  otherActive?: Workout[];
 };
 
 const DATABASE = "strength-training";
@@ -13,8 +14,10 @@ export const KEY = "state";
 export function openDatabase(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     let blocked = false;
-    const request = indexedDB.open(DATABASE, 1);
-    request.onupgradeneeded = () => request.result.createObjectStore(STORE);
+    const request = indexedDB.open(DATABASE, 2);
+    // Version 2 keeps the same store and records, but prevents old app tabs
+    // opening version 1 and treating additional unfinished sessions as deletions.
+    request.onupgradeneeded = () => { if (!request.result.objectStoreNames.contains(STORE)) request.result.createObjectStore(STORE); };
     request.onerror = () => reject(request.error);
     request.onblocked = () => {
       blocked = true;
@@ -29,7 +32,7 @@ export function openDatabase(): Promise<IDBDatabase> {
   });
 }
 
-function isWorkout(value: unknown): value is Workout {
+export function isWorkout(value: unknown): value is Workout {
   if (typeof value !== "object" || value === null) return false;
   const workout = value as Workout;
   return typeof workout.id === "string"
@@ -55,6 +58,7 @@ export function isState(value: unknown): value is WorkoutState {
   const state = value as WorkoutState;
   return Number.isSafeInteger(state.revision) && state.revision >= 0
     && (state.active === null || isWorkout(state.active))
+    && (state.otherActive === undefined || (Array.isArray(state.otherActive) && state.otherActive.every(isWorkout)))
     && Array.isArray(state.history)
     && state.history.every((workout) =>
       isWorkout(workout) && typeof workout.completedAt === "string"

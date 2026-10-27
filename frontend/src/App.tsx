@@ -242,6 +242,16 @@ export default function App() {
         {saving ? "Saving… Keep this page open." : error ? "Changes were not saved." : "Saved on this device"}
       </p>
       {error ? <p className="error" role="alert">{error}</p> : null}
+      {(state.otherActive?.length ?? 0)>0 ? (
+        <section className="exercise-card" aria-label="Other unfinished workouts">
+          <h2>Other unfinished workouts</h2>
+          <p className="muted">Resume a saved session. Your current session stays saved.</p>
+          {state.otherActive!.map(session=><button type="button" className="secondary" key={session.id} disabled={saving} onClick={()=>{
+            if (workout && !window.confirm("Switch workouts? Save any unfinished set first. Logged sets stay saved.")) return;
+            void commit(current=>({ ...current,active:session,otherActive:[...(current.active?[current.active]:[]),...(current.otherActive??[]).filter(item=>item.id!==session.id)] }));
+          }}>Resume {new Date(session.startedAt).toLocaleString()}</button>)}
+        </section>
+      ):null}
       <div hidden={view !== "workout"}>
         <fieldset className="workout-controls" disabled={saving}>
 
@@ -328,6 +338,7 @@ export default function App() {
               {workout.exercises.map((exercise) => (
                 <div key={exercise.id}>
                   <ExerciseCard
+                      workoutId={workout.id}
                     exercise={exercise}
                     focusEntry={entryFocusId === exercise.id}
                     previousSession={findPreviousSession(state.history, exercise.exerciseId, workout.id)}

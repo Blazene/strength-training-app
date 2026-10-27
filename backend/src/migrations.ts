@@ -14,7 +14,7 @@ export async function migrate(pool: Pool, config: AppConfig) {
     await (await getMigrations(auth.options)).runMigrations();
     await client.query("BEGIN");
     await client.query("CREATE TABLE IF NOT EXISTS app_migrations(name text PRIMARY KEY, checksum text NOT NULL, applied_at timestamptz NOT NULL DEFAULT now())");
-    for (const name of ["001_workouts.sql", "002_sync.sql"]) {
+    for (const name of ["001_workouts.sql", "002_sync.sql", "003_downloads.sql"]) {
       const sql = await readFile(new URL(`../migrations/${name}`, import.meta.url), "utf8");
       const checksum = createHash("sha256").update(sql).digest("hex");
       const existing = await client.query("SELECT checksum FROM app_migrations WHERE name=$1", [name]);
