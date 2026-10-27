@@ -217,6 +217,11 @@ export default function ExerciseCard({
               placeholder="60"
               value={weight}
               onFocus={(event) => event.currentTarget.select()}
+              onClick={(event) => {
+                const input = event.currentTarget;
+                // Safari may place the caret after its native tap handling.
+                requestAnimationFrame(() => { if (document.activeElement === input) input.select(); });
+              }}
               onChange={(event) => { setWeight(event.target.value); setError(null); }}
               onKeyDown={(event) => {
                 if (event.key === "Enter" && !event.nativeEvent.isComposing) {
@@ -244,6 +249,11 @@ export default function ExerciseCard({
               placeholder="8"
               value={reps}
               onFocus={(event) => event.currentTarget.select()}
+              onClick={(event) => {
+                const input = event.currentTarget;
+                // Safari may place the caret after its native tap handling.
+                requestAnimationFrame(() => { if (document.activeElement === input) input.select(); });
+              }}
               onChange={(event) => { setReps(event.target.value); setError(null); }}
               aria-invalid={error?.field === "reps"}
               aria-describedby={error?.field === "reps" ? errorId : undefined}

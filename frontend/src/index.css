@@ -253,3 +253,8 @@ select:focus-visible {
   .entry-shortcuts > button { padding: 12px 10px; font-size: 14px; }
   .set-entry .form-actions { flex-direction: column; }
 }
+
+/* Days 12–13: iPhone install guidance */
+.offline-panel details { margin-top: 8px; }
+.offline-panel summary { min-height: 48px; padding: 12px 0; color: #c6d1e2; cursor: pointer; }
+.offline-panel summary:focus-visible { outline: 3px solid #bef264; outline-offset: 3px; border-radius: 6px; }

@@ -53,6 +53,23 @@ self.addEventListener("activate", (event) => {
   })());
 });
 
+self.addEventListener("message", (event) => {
+  if (event.data?.type === "CACHE_STATUS") {
+    event.ports[0]?.postMessage({ ok: true, cacheName: CACHE });
+    return;
+  }
+  if (event.data?.type !== "CACHE_APP") return;
+  event.waitUntil((async () => {
+    try {
+      const cache = await caches.open(CACHE);
+      await cache.addAll(FILES.map((path) => new Request(path, { cache: "reload" })));
+      event.ports[0]?.postMessage({ ok: true });
+    } catch {
+      event.ports[0]?.postMessage({ ok: false });
+    }
+  })());
+});
+
 self.addEventListener("fetch", (event) => {
   const request = event.request;
   const url = new URL(request.url);
@@ -61,8 +78,11 @@ self.addEventListener("fetch", (event) => {
   if (request.mode === "navigate") {
     event.respondWith((async () => {
       const cache = await caches.open(CACHE);
+      const fallback = await cache.match("/");
+      const controller = new AbortController();
+      const timeout = fallback ? setTimeout(() => controller.abort(), 2000) : undefined;
       try {
-        const response = await fetch(request);
+        const response = await fetch(request, { signal: controller.signal });
         if (response.ok && response.headers.get("content-type")?.includes("text/html")) {
           const html = await response.clone().text();
           if (html.includes("/@vite/client")) {
@@ -70,13 +90,15 @@ self.addEventListener("fetch", (event) => {
             await self.registration.unregister();
             await Promise.all((await caches.keys()).filter((name) => name.startsWith(PREFIX)).map((name) => caches.delete(name)));
           } else {
-            await cache.put("/", response.clone());
+            try { await cache.put("/", response.clone()); } catch { /* Keep the online page usable if storage is full. */ }
           }
           return response;
         }
-        return (await cache.match("/")) || response;
+        return fallback || response;
       } catch {
-        return (await cache.match("/")) || Response.error();
+        return fallback || Response.error();
+      } finally {
+        clearTimeout(timeout);
       }
     })());
     return;
@@ -88,7 +110,9 @@ self.addEventListener("fetch", (event) => {
     const cached = await cache.match(request);
     if (cached) return cached;
     const response = await fetch(request);
-    if (response.ok) await cache.put(request, response.clone());
+    if (response.ok) {
+      try { await cache.put(request, response.clone()); } catch { /* Return the fetched asset even if caching fails. */ }
+    }
     return response;
   })());
 });

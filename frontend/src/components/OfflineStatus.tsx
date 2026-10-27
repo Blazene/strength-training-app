@@ -2,6 +2,8 @@ import { useOfflineAccess } from "../hooks/useOfflineAccess";
 
 export default function OfflineStatus() {
   const { online, access, updateWaiting, retry } = useOfflineAccess();
+  const installed = window.matchMedia("(display-mode: standalone)").matches
+    || (navigator as Navigator & { standalone?: boolean }).standalone === true;
   const message = access === "ready"
     ? online ? "Ready for offline use" : "Offline — keep logging. Workouts save on this device."
     : access === "development"
@@ -21,6 +23,13 @@ export default function OfflineStatus() {
       ) : null}
       {updateWaiting ? (
         <p>An update is ready. Save your sets, then close all training tabs and reopen the app to use it.</p>
+      ) : null}
+      {!installed && access === "ready" ? (
+        <details>
+          <summary>Install on iPhone</summary>
+          <p>Open this address in Safari, choose Share, then Add to Home Screen. If shown, turn on Open as Web App and tap Add.</p>
+          <p>Open the new icon once while connected and wait for Ready for offline use before training offline.</p>
+        </details>
       ) : null}
     </aside>
   );

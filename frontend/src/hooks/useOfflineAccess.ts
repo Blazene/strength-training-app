@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { hasCachedApp, repairOfflineCache } from "../utils/offlineCache";
 
 type Access = "preparing" | "ready" | "unavailable" | "development" | "unsupported";
 
@@ -38,14 +39,28 @@ export function useOfflineAccess() {
         return;
       }
       if (!cancelled) setAccess("preparing");
-      const registration = await navigator.serviceWorker.register("/sw.js", { updateViaCache: "none" });
+      const existing = await navigator.serviceWorker.getRegistration("/");
+      const registration = existing?.active && new URL(existing.active.scriptURL).pathname === "/sw.js"
+        ? existing
+        : await navigator.serviceWorker.register("/sw.js", { updateViaCache: "none" });
       if (cancelled) return;
+      if (existing && navigator.onLine) void registration.update().catch(() => {});
+      if (attempt > 0 && registration.active) await repairOfflineCache(registration.active);
+
+      async function verifyCache() {
+        try {
+          const ready = await hasCachedApp(registration.active ?? undefined);
+          if (!cancelled) setAccess(ready ? "ready" : "unavailable");
+        } catch {
+          if (!cancelled) setAccess("unavailable");
+        }
+      }
 
       function watchWorker(worker: ServiceWorker | null) {
         if (!worker) return;
         function changed() {
           if (cancelled || !worker) return;
-          if (worker.state === "activated") setAccess("ready");
+          if (worker.state === "activated") void verifyCache();
           if (worker.state === "installed" && registration.active) setUpdateWaiting(true);
           if (worker.state === "redundant" && !registration.active) setAccess("unavailable");
         }
@@ -55,11 +70,11 @@ export function useOfflineAccess() {
       }
 
       watchWorker(registration.installing);
+      watchWorker(registration.active);
       const updated = () => watchWorker(registration.installing);
       registration.addEventListener("updatefound", updated);
       cleanups.push(() => registration.removeEventListener("updatefound", updated));
       if (registration.waiting) setUpdateWaiting(true);
-      if (registration.active) setAccess("ready");
     }
 
     void register().catch(() => { if (!cancelled) setAccess("unavailable"); });
