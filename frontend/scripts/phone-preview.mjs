@@ -8,6 +8,8 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadPreviewAsset } from './preview-files.mjs';
 import { proxyAccountApi } from './api-proxy.mjs';
+import { inspectPhonePreview } from './phone-startup.mjs';
+import { handlePhoneUpdate } from './phone-update.mjs';
 
 const frontend = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const certificateDirectory = resolve(frontend, '../.local/phone-preview');
@@ -25,6 +27,15 @@ const addresses = Object.entries(networkInterfaces()).sort(([left], [right]) => 
   (entries ?? []).filter((entry) => entry.family === 'IPv4' && !entry.internal).map((entry) => entry.address)
 );
 const privateAddresses = [...new Set(addresses.filter((address) => /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(address)))];
+const startup = await inspectPhonePreview({ setupPort, httpsPort, certificateFile: resolve(certificateDirectory, 'ca-cert.pem') });
+if (startup.status === 'running') {
+  console.log(`\nPhone preview is already running.\nApp: https://${name}:${httpsPort}/\nSetup: http://${name}:${setupPort}/\nUse the existing instance; no new server or certificate is needed.\n`);
+  process.exit(0);
+}
+if (startup.status === 'conflict') {
+  console.error(`Phone preview could not start: port(s) ${startup.busyPorts.join(', ')} are in use by an unverified instance. Stop the other preview in its terminal, then run npm run phone again. No running process was stopped.`);
+  process.exit(1);
+}
 if (privateAddresses.length === 0) throw new Error('Connect your Mac to Wi-Fi, then run npm run phone again.');
 await readFile(resolve(frontend, 'dist/index.html'));
 await mkdir(certificateDirectory, { recursive: true, mode: 0o700 });
@@ -64,16 +75,31 @@ const bootstrap = createHttpServer((request, response) => {
 });
 const app = createHttpsServer({ key: await readFile(path('server-key.pem')), cert: await readFile(path('server-cert.pem')) }, async (request, response) => {
   const pathname = new URL(request.url, 'https://localhost').pathname;
+  if (await handlePhoneUpdate(request, response, resolve(frontend, 'dist'))) return;
   if (pathname === '/api' || pathname.startsWith('/api/')) { proxyAccountApi(request, response, process.env.BACKEND_URL ?? 'http://127.0.0.1:4001'); return; }
   if (request.method !== 'GET' && request.method !== 'HEAD') { response.writeHead(405); response.end(); return; }
   const asset = await loadPreviewAsset(resolve(frontend, 'dist'), request.url);
   response.writeHead(asset ? 200 : 404, { 'content-type': asset?.type ?? 'text/plain', 'cache-control': 'no-cache', 'x-content-type-options': 'nosniff' });
   response.end(request.method === 'HEAD' ? undefined : asset?.body ?? 'Not found');
 });
-for (const server of [bootstrap, app]) server.on('error', (error) => { console.error(error.message); bootstrap.close(); app.close(); process.exitCode = 1; });
-await Promise.all([
-  new Promise((resolve, reject) => { bootstrap.once('error', reject); bootstrap.listen(setupPort, '0.0.0.0', resolve); }),
-  new Promise((resolve, reject) => { app.once('error', reject); app.listen(httpsPort, '0.0.0.0', resolve); })
-]);
+function stopServers() {
+  bootstrap.close(); app.close(); bootstrap.closeAllConnections(); app.closeAllConnections();
+}
+function listen(server, port) {
+  return new Promise((resolve, reject) => {
+    function failed(error) { reject(error); }
+    server.once('error', failed);
+    server.listen(port, '0.0.0.0', () => { server.removeListener('error', failed); resolve(); });
+  });
+}
+try {
+  await Promise.all([listen(bootstrap, setupPort), listen(app, httpsPort)]);
+} catch (error) {
+  stopServers();
+  console.error(error.code === 'EADDRINUSE'
+    ? 'Phone preview ports became occupied during startup. Run npm run phone again to check the running instance.'
+    : `Phone preview could not start: ${error.message}`);
+  process.exit(1);
+}
 console.log(`\nOn your iPhone, open Safari:\n${setupUrl}\n\nAfter trusting the test certificate, open:\n${appUrl}\n\nSame-Wi-Fi IP fallback: https://${privateAddresses[0]}:${httpsPort}/\nCertificate SHA-256: ${rootCertificate.fingerprint256}\nKeep this terminal running during setup. Control + C stops both local servers.\n`);
-for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, () => { bootstrap.close(); app.close(); bootstrap.closeAllConnections(); app.closeAllConnections(); });
+for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, stopServers);

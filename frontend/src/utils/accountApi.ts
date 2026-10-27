@@ -1,6 +1,9 @@
 export type AccountUser = { id: string; name: string; email: string };
-export async function accountRequest(path: string, body?: Record<string, string>) {
+export async function accountRequest(path: string, body?: Record<string, string>, signal?: AbortSignal) {
   const controller = new AbortController();
+  const cancel = () => controller.abort();
+  if (signal?.aborted) controller.abort();
+  signal?.addEventListener("abort", cancel, { once: true });
   const timeout = setTimeout(() => controller.abort(), 8000);
   try {
     const response = await fetch(path, {
@@ -14,5 +17,5 @@ export async function accountRequest(path: string, body?: Record<string, string>
   } catch (error) {
     if (error instanceof Error && error.name !== "AbortError" && !(error instanceof TypeError)) throw error;
     throw new Error("Account service is unavailable. You can keep logging on this device.", { cause: error });
-  } finally { clearTimeout(timeout); }
+  } finally { clearTimeout(timeout); signal?.removeEventListener("abort", cancel); }
 }

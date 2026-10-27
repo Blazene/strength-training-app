@@ -2,7 +2,11 @@ import { useEffect, useRef, useState } from "react";
 import type { CompletedWorkout } from "../types/workout";
 import WorkoutSummary from "./WorkoutSummary";
 
-export default function WorkoutHistory({ history }: { history: CompletedWorkout[] }) {
+export default function WorkoutHistory({ history, saving, onDelete }: {
+  history: CompletedWorkout[];
+  saving: boolean;
+  onDelete: (id: string) => Promise<boolean>;
+}) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const details = useRef<HTMLDivElement>(null);
   const selected = history.find((session) => session.id === selectedId);
@@ -22,6 +26,10 @@ export default function WorkoutHistory({ history }: { history: CompletedWorkout[
       {selected ? (
         <div className="history-details" ref={details} tabIndex={-1}>
           <WorkoutSummary workout={selected} title="Workout details" />
+          <button type="button" className="danger" disabled={saving} onClick={async () => {
+            if (!window.confirm("Delete this completed workout? If sync is enabled, its server copy will also be deleted when connected.")) return;
+            if (await onDelete(selected.id)) setSelectedId(null);
+          }}>Delete workout</button>
         </div>
       ) : null}
 

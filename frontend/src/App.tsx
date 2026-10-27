@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { useWorkoutSync } from "./hooks/useWorkoutSync";
+import SyncStatus from "./components/SyncStatus";
 import { useWorkouts } from "./hooks/useWorkouts";
 import ExerciseCard from "./components/ExerciseCard";
 import OfflineStatus from "./components/OfflineStatus";
@@ -15,6 +17,7 @@ import type {
 
 export default function App() {
   const { state, ready, saving, error, commit, retry } = useWorkouts();
+  const sync = useWorkoutSync(ready);
   const workout = state.active;
   const [view, setView] = useState<"workout" | "history">("workout");
   const [selectedExerciseId, setSelectedExerciseId] = useState("");
@@ -226,13 +229,14 @@ export default function App() {
         </button>
       </nav>
 
-      <AccountPanel />
+      <AccountPanel sync={sync} />
+      <SyncStatus sync={sync} />
       <OfflineStatus />
 
       <p className="notice">
         Workouts are saved in this browser on this device. Logged sets survive
         refreshes; unfinished form inputs are not saved. Clearing browser data
-        removes your workouts. Cloud sync is coming later.
+        removes your local workouts. When sync is enabled, saved changes upload while the app is open and connected.
       </p>
       <p className="muted" role="status">
         {saving ? "Saving… Keep this page open." : error ? "Changes were not saved." : "Saved on this device"}
@@ -361,7 +365,7 @@ export default function App() {
         </fieldset>
       </div>
       <div hidden={view !== "history"}>
-        <WorkoutHistory history={state.history} />
+        <WorkoutHistory history={state.history} saving={saving} onDelete={(id) => commit((current) => ({ ...current, history: current.history.filter((session) => session.id !== id) }))} />
       </div>
     </main>
   );

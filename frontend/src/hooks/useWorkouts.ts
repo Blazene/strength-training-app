@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { loadWorkouts, saveWorkouts } from "../storage/workouts";
+import { loadWorkouts } from "../storage/workouts";
+import { saveWorkouts } from "../storage/sync";
 import type { WorkoutState } from "../storage/workouts";
 
 export function useWorkouts() {

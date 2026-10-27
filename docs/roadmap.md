@@ -15,9 +15,10 @@ future day requests rather than inferring a different order.
 | 12–13 | App caching, PWA, offline reopen | Implemented and verified in Chromium/WebKit; active-cache validation, repair, and stalled-network fallback added |
 | 14 | Full workout on the user's phone, ideally in the gym | Passed on iPhone on 27 Oct 2026: offline reopening, saved workouts, and history correct; no issues reported |
 | 15–16 | PostgreSQL schema, Express validation/endpoints, account auth | Implemented and verified: Better Auth accounts, owned transactional workout CRUD, validation, and first-party Mac/iPhone sessions |
-| 17–18 | Persistent local sync queue, upload and acknowledgement | Pending |
-| 19–20 | Idempotent retries, edits/deletions, pull after login | Pending |
-| 21 | Interrupted requests, reconnect, save/sync indicators | Pending |
+| 17–18 | Persistent local sync queue, upload and acknowledgement | Implemented: atomic queue/save, explicit account binding, uploads on opening/reconnect/save/manual retry, account-checked acknowledgements |
+| 19 | Idempotent retries and safe edits/deletions | Implemented: persistent backoff, receipt replay, sequence guards, deletion markers, offline history deletion, and account isolation |
+| 20 | Pull server data after login and merge safely | Pending; uploads do not yet download workouts to another browser/device |
+| 21 | Interrupted requests, reconnect, save/sync indicators | Core indicators and failure tests added early in Days 17–19; broader reconnect verification remains |
 | 22–23 | Full offline/failure/session-expiry tests and data-loss fixes | Final reliability pass pending |
 | 24–25 | Frontend/API/database hosting, HTTPS, production auth | Pending; choose hosting that fits free/no-payment-information preference |
 | 26 | Real workout with deployed version on phone | Pending |
@@ -30,5 +31,5 @@ multiple authentication providers remain outside the first version.
 
 A successful release preserves an offline gym session after closing/reopening and
 syncs it later. IndexedDB saves data; the service worker caches the app. Neither is
-a guaranteed backup. Server synchronization and per-account ownership must be
-implemented and tested before describing workouts as synced.
+a guaranteed backup. Upload synchronization and per-account queue ownership are implemented. A sync
+status requires a server acknowledgement; server-to-device retrieval remains Day 20.

@@ -4,9 +4,10 @@ import { fromNodeHeaders, toNodeHandler } from "better-auth/node";
 import type { Pool } from "pg";
 import { createAuthFactory } from "./auth.js";
 import type { AppConfig } from "./config.js";
+import { applySyncOperation, parseSyncOperation, SyncConflict } from "./sync.js";
 import { exercises } from "./exercises.js";
 import { InputError, pagination, parseWorkout, validId } from "./validation.js";
-import { deleteWorkout, getWorkout, listWorkouts, putWorkout } from "./workouts.js";
+import { deleteDirectWorkout, getWorkout, listWorkouts, putWorkout, WorkoutConflict } from "./workouts.js";
 
 export function publicOrigin(req: Request, config: AppConfig) {
   const protocol = req.get("x-forwarded-proto") ?? "http";
@@ -39,7 +40,7 @@ export function createApp(pool: Pool, config: AppConfig) {
     try { await pool.query("SELECT 1"); res.json({ status: "ok", database: "connected" }); }
     catch { res.status(503).json({ status: "error", database: "unavailable" }); }
   });
-  app.use(["/api/me", "/api/workouts", "/api/exercises"], async (req, res, next) => {
+  app.use(["/api/me", "/api/workouts", "/api/exercises", "/api/sync"], async (req, res, next) => {
     try {
       const session = await auths.forOrigin(publicOrigin(req, config)).api.getSession({ headers: fromNodeHeaders(req.headers) });
       if (!session) { res.status(401).json({ error: "Sign in to access your server account." }); return; }
@@ -49,6 +50,12 @@ export function createApp(pool: Pool, config: AppConfig) {
   });
   const owner = (res: Response): string => res.locals.user.id as string;
   app.get("/api/me", (_req, res) => res.json({ user: res.locals.user }));
+  app.post("/api/sync", async (req, res) => {
+    const operation = parseSyncOperation(req.body);
+    // Assert the expected account; only the verified session chooses the owner.
+    if (operation.accountId !== owner(res)) { res.status(403).json({ error: "Sign in to the account linked to these saved workouts." }); return; }
+    res.json(await applySyncOperation(pool, owner(res), operation));
+  });
   app.get("/api/exercises", (_req, res) => res.json({ exercises }));
   app.get("/api/workouts", async (req, res) => {
     const { limit, offset } = pagination(req.query);
@@ -66,11 +73,12 @@ export function createApp(pool: Pool, config: AppConfig) {
   });
   app.delete("/api/workouts/:id", async (req, res) => {
     if (!validId(req.params.id)) { res.status(400).json({ error: "Workout ID must be a UUID." }); return; }
-    if (!await deleteWorkout(pool, owner(res), req.params.id)) { res.status(404).json({ error: "Workout not found." }); return; }
+    if (!await deleteDirectWorkout(pool, owner(res), req.params.id)) { res.status(404).json({ error: "Workout not found." }); return; }
     res.status(204).end();
   });
   app.use("/api", (_req, res) => res.status(404).json({ error: "Endpoint not found." }));
   const handleError: ErrorRequestHandler = (error, _req, res, _next) => {
+    if (error instanceof SyncConflict || error instanceof WorkoutConflict) { res.status(409).json({ error: error.message }); return; }
     if (error instanceof InputError) { res.status(400).json({ error: error.message }); return; }
     if (error.type === "entity.too.large") { res.status(413).json({ error: "Request is too large." }); return; }
     if (error instanceof SyntaxError && "body" in error) { res.status(400).json({ error: "Invalid JSON." }); return; }

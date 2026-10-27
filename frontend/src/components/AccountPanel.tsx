@@ -1,38 +1,18 @@
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { accountRequest } from "../utils/accountApi";
-import type { AccountUser } from "../utils/accountApi";
+import type { WorkoutSync } from "../hooks/useWorkoutSync";
 
-export default function AccountPanel() {
-  const [open, setOpen] = useState(false);
+export default function AccountPanel({ sync }: { sync: WorkoutSync }) {
   const [mode, setMode] = useState<"signin" | "signup">("signin");
-  const [user, setUser] = useState<AccountUser | null>(null);
-  const [status, setStatus] = useState<"checking" | "ready" | "unavailable">("checking");
-  const [attempt, setAttempt] = useState(0);
+  const user = sync.user;
+  const status = sync.accountStatus;
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const pending = useRef(false);
-
-  useEffect(() => {
-    if (!open) return;
-    let cancelled = false;
-    async function check() {
-      setStatus("checking");
-      try {
-        const account = await accountRequest("/api/me");
-        if (!cancelled) { setUser(account?.user ?? null); setStatus("ready"); setError(""); }
-      } catch {
-        if (!cancelled) setStatus("unavailable");
-      }
-    }
-    void check();
-    function reconnect() { void check(); }
-    window.addEventListener("online", reconnect);
-    return () => { cancelled = true; window.removeEventListener("online", reconnect); };
-  }, [open, attempt]);
 
   async function authenticate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -43,27 +23,27 @@ export default function AccountPanel() {
         email: email.trim(), password, ...(mode === "signup" ? { name: name.trim() } : {})
       });
       if (!result?.user) throw new Error("Account could not be confirmed. Try again.");
-      setUser(result.user); setPassword("");
+      sync.sessionChanged(result.user); setPassword("");
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not sign in. Try again."); }
     finally { pending.current = false; setBusy(false); }
   }
   async function signOut() {
     if (pending.current) return;
     pending.current = true; setBusy(true); setError("");
-    try { await accountRequest("/api/auth/sign-out", {}); setUser(null); setPassword(""); }
+    try { await accountRequest("/api/auth/sign-out", {}); sync.sessionChanged(null); setPassword(""); }
     catch (cause) { setError(cause instanceof Error ? cause.message : "Could not sign out. Try again when connected."); }
     finally { pending.current = false; setBusy(false); }
   }
 
   return (
-    <details className="account-panel" onToggle={(event) => { setOpen(event.currentTarget.open); if (!event.currentTarget.open) { setPassword(""); setError(""); } }}>
+    <details className="account-panel" onToggle={(event) => { if (!event.currentTarget.open) { setPassword(""); setError(""); } }}>
       <summary>Account{user && status === "ready" ? ` · ${user.name}` : ""}</summary>
       <section aria-label="Account settings">
         {status === "checking" ? <p role="status">Checking your account…</p> : null}
         {status === "unavailable" ? (
           <>
             <p>Account service is unavailable. You can keep logging on this device.</p>
-            <button type="button" className="secondary" onClick={() => setAttempt((value) => value + 1)}>Retry account connection</button>
+            <button type="button" className="secondary" onClick={sync.retry}>Retry account connection</button>
           </>
         ) : null}
         {status === "ready" && user ? (
@@ -90,7 +70,7 @@ export default function AccountPanel() {
           </form>
         ) : null}
         {error ? <p className="error" role="alert">{error}</p> : null}
-        <p className="muted">Your workouts stay saved on this device. Signing in does not upload them yet; automatic sync is coming next.</p>
+        <p className="muted">Workouts save on this device first. Enable sync below to upload them to your account. Closing the app pauses uploads; saved changes resume next time you open it online.</p>
       </section>
     </details>
   );
