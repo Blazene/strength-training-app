@@ -1,17 +1,26 @@
 import { useState } from "react";
+import { useWorkouts } from "./hooks/useWorkouts";
 import ExerciseCard from "./components/ExerciseCard";
 import { exercises } from "./data/exercises";
+import { findPreviousSession } from "./utils/workoutHistory";
 import type {
-  CompletedWorkout,
   Workout,
   WorkoutExercise,
   WorkoutSet
 } from "./types/workout";
 
 export default function App() {
-  const [workout, setWorkout] = useState<Workout | null>(null);
-  const [completed, setCompleted] = useState<CompletedWorkout | null>(null);
+  const { state, ready, saving, error, commit, retry } = useWorkouts();
+  const workout = state.active;
+  const [summaryId, setSummaryId] = useState<string | null>(null);
   const [selectedExerciseId, setSelectedExerciseId] = useState("");
+  const completed = workout ? null : (
+    state.history.find((item) => item.id === summaryId) ?? state.history[0] ?? null
+  );
+
+  function setWorkout(update: (current: Workout | null) => Workout | null) {
+    return commit((current) => ({ ...current, active: update(current.active) }));
+  }
 
   const availableExercises = exercises.filter(
     (exercise) =>
@@ -38,26 +47,16 @@ export default function App() {
       )
     : 0;
 
-  function startWorkout() {
-    if (
-      completed &&
-      !window.confirm(
-        "Start another workout? This temporary summary will be cleared."
-      )
-    ) {
-      return;
-    }
-
-    setCompleted(null);
-    setSelectedExerciseId("");
-    setWorkout({
+  async function startWorkout() {
+    const saved = await setWorkout(() => ({
       id: crypto.randomUUID(),
       startedAt: new Date().toISOString(),
       exercises: []
-    });
+    }));
+    if (saved) setSelectedExerciseId("");
   }
 
-  function addExercise() {
+  async function addExercise() {
     const selected = exercises.find(
       (exercise) => exercise.id === selectedExerciseId
     );
@@ -71,7 +70,7 @@ export default function App() {
       sets: []
     };
 
-    setWorkout((current) => {
+    const saved = await setWorkout((current) => {
       if (
         !current ||
         current.exercises.some((item) => item.exerciseId === selected.id)
@@ -85,7 +84,7 @@ export default function App() {
       };
     });
 
-    setSelectedExerciseId("");
+    if (saved) setSelectedExerciseId("");
   }
 
   function removeExercise(exerciseId: string) {
@@ -116,7 +115,7 @@ export default function App() {
   }
 
   function saveSet(exerciseId: string, savedSet: WorkoutSet) {
-    setWorkout((current) => {
+    return setWorkout((current) => {
       if (!current) return current;
 
       return {
@@ -142,7 +141,7 @@ export default function App() {
   }
 
   function deleteSet(exerciseId: string, setId: string) {
-    setWorkout((current) => {
+    return setWorkout((current) => {
       if (!current) return current;
 
       return {
@@ -159,7 +158,7 @@ export default function App() {
     });
   }
 
-  function finishWorkout() {
+  async function finishWorkout() {
     if (!workout || totalSets === 0) return;
 
     if (
@@ -170,17 +169,35 @@ export default function App() {
       return;
     }
 
-    setCompleted({
-      ...workout,
-      completedAt: new Date().toISOString(),
-      exercises: workout.exercises.filter(
-        (exercise) => exercise.sets.length > 0
-      )
+    const completedAt = new Date().toISOString();
+    const saved = await commit((current) => {
+      if (!current.active) return current;
+      const finished = {
+        ...current.active,
+        completedAt,
+        exercises: current.active.exercises.filter((exercise) => exercise.sets.length > 0)
+      };
+      return { ...current, active: null, history: [finished, ...current.history] };
     });
+    if (saved) {
+      setSummaryId(workout.id);
+      setSelectedExerciseId("");
+      window.scrollTo({ top: 0 });
+    }
+  }
 
-    setWorkout(null);
-    setSelectedExerciseId("");
-    window.scrollTo({ top: 0 });
+  if (!ready) {
+    return (
+      <main className="container">
+        <h1>Strength training</h1>
+        {error ? (
+          <>
+            <p className="error" role="alert">{error}</p>
+            <button type="button" onClick={retry}>Retry loading workouts</button>
+          </>
+        ) : <p role="status">Loading saved workouts…</p>}
+      </main>
+    );
   }
 
   const heading = workout
@@ -198,156 +215,189 @@ export default function App() {
       </header>
 
       <p className="notice">
-        Early version: workouts and summaries are temporary.
-        Refreshing or closing this page clears them.
+        Workouts are saved in this browser on this device. Logged sets survive
+        refreshes; unfinished form inputs are not saved. Clearing browser data
+        removes your workouts. Cloud sync is coming later.
       </p>
+      <p className="muted" role="status">
+        {saving ? "Saving… Keep this page open." : error ? "Changes were not saved." : "Saved on this device"}
+      </p>
+      {error ? <p className="error" role="alert">{error}</p> : null}
+      <fieldset className="workout-controls" disabled={saving}>
 
-      {completed ? (
-        <section className="exercise-card" aria-labelledby="summary-title">
-          <p className="eyebrow">SESSION FINISHED</p>
-          <h2 id="summary-title">Session summary</h2>
+        {completed ? (
+          <section className="exercise-card" aria-labelledby="summary-title">
+            <p className="eyebrow">SESSION FINISHED</p>
+            <h2 id="summary-title">Session summary</h2>
 
-          <div className="workout-summary">
-            <div>
-              <span className="muted">Duration</span>
-              <strong>{completedMinutes} min</strong>
+            <div className="workout-summary">
+              <div>
+                <span className="muted">Duration</span>
+                <strong>{completedMinutes} min</strong>
+              </div>
+              <div>
+                <span className="muted">Exercises</span>
+                <strong>{completed.exercises.length}</strong>
+              </div>
+              <div>
+                <span className="muted">Sets logged</span>
+                <strong>{completedSets}</strong>
+              </div>
             </div>
-            <div>
-              <span className="muted">Exercises</span>
-              <strong>{completed.exercises.length}</strong>
-            </div>
-            <div>
-              <span className="muted">Sets logged</span>
-              <strong>{completedSets}</strong>
-            </div>
-          </div>
 
-          {completed.exercises.map((exercise) => (
-            <div className="summary-exercise" key={exercise.id}>
-              <h3>{exercise.name}</h3>
-              <ol>
-                {exercise.sets.map((set) => (
-                  <li key={set.id}>
-                    {set.weightKg} kg × {set.reps} reps
-                  </li>
-                ))}
-              </ol>
-            </div>
-          ))}
+            {completed.exercises.map((exercise) => (
+              <div className="summary-exercise" key={exercise.id}>
+                <h3>{exercise.name}</h3>
+                <ol>
+                  {exercise.sets.map((set) => (
+                    <li key={set.id}>
+                      {set.weightKg} kg × {set.reps} reps
+                    </li>
+                  ))}
+                </ol>
+              </div>
+            ))}
 
-          <p className="muted">
-            This summary is shown for this visit only. Workout history
-            and persistent saving are coming next.
-          </p>
+            <p className="muted">
+              This session is saved in your workout history. You can start another
+              workout and come back to it later.
+            </p>
 
-          <button type="button" onClick={startWorkout}>
-            Start another workout
-          </button>
-        </section>
-      ) : null}
-
-      {!workout && !completed ? (
-        <section className="exercise-card">
-          <h2>Start a session</h2>
-          <p className="muted">
-            Choose your exercises and record the weight and reps for each set.
-          </p>
-          <button type="button" onClick={startWorkout}>
-            Start workout
-          </button>
-        </section>
-      ) : null}
-
-      {workout ? (
-        <>
-          <section className="workout-summary" aria-label="Workout summary">
-            <div>
-              <span className="muted">Started</span>
-              <strong>
-                {new Date(workout.startedAt).toLocaleTimeString([], {
-                  hour: "2-digit",
-                  minute: "2-digit"
-                })}
-              </strong>
-            </div>
-            <div>
-              <span className="muted">Exercises</span>
-              <strong>{workout.exercises.length}</strong>
-            </div>
-            <div>
-              <span className="muted">Sets logged</span>
-              <strong aria-live="polite">{totalSets}</strong>
-            </div>
+            <button type="button" onClick={startWorkout}>
+              Start another workout
+            </button>
           </section>
+        ) : null}
 
-          <section className="exercise-card" aria-labelledby="add-exercise-title">
-            <h2 id="add-exercise-title">Add an exercise</h2>
+        {!workout && !completed ? (
+          <section className="exercise-card">
+            <h2>Start a session</h2>
+            <p className="muted">
+              Choose your exercises and record the weight and reps for each set.
+            </p>
+            <button type="button" onClick={startWorkout}>
+              Start workout
+            </button>
+          </section>
+        ) : null}
 
-            {availableExercises.length > 0 ? (
-              <div className="exercise-picker">
-                <label htmlFor="exercise">
-                  Exercise
-                  <select
-                    id="exercise"
-                    value={selectedExerciseId}
-                    onChange={(event) => setSelectedExerciseId(event.target.value)}
+        {workout ? (
+          <>
+            <section className="workout-summary" aria-label="Workout summary">
+              <div>
+                <span className="muted">Started</span>
+                <strong>
+                  {new Date(workout.startedAt).toLocaleTimeString([], {
+                    hour: "2-digit",
+                    minute: "2-digit"
+                  })}
+                </strong>
+              </div>
+              <div>
+                <span className="muted">Exercises</span>
+                <strong>{workout.exercises.length}</strong>
+              </div>
+              <div>
+                <span className="muted">Sets logged</span>
+                <strong aria-live="polite">{totalSets}</strong>
+              </div>
+            </section>
+
+            <section className="exercise-card" aria-labelledby="add-exercise-title">
+              <h2 id="add-exercise-title">Add an exercise</h2>
+
+              {availableExercises.length > 0 ? (
+                <div className="exercise-picker">
+                  <label htmlFor="exercise">
+                    Exercise
+                    <select
+                      id="exercise"
+                      value={selectedExerciseId}
+                      onChange={(event) => setSelectedExerciseId(event.target.value)}
+                    >
+                      <option value="">Choose an exercise</option>
+                      {availableExercises.map((exercise) => (
+                        <option key={exercise.id} value={exercise.id}>
+                          {exercise.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <button
+                    type="button"
+                    onClick={addExercise}
+                    disabled={!selectedExerciseId}
                   >
-                    <option value="">Choose an exercise</option>
-                    {availableExercises.map((exercise) => (
-                      <option key={exercise.id} value={exercise.id}>
-                        {exercise.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                    Add exercise
+                  </button>
+                </div>
+              ) : (
+                <p className="muted">All available exercises have been added.</p>
+              )}
+            </section>
 
+            {workout.exercises.map((exercise) => (
+              <div key={exercise.id}>
+                <ExerciseCard
+                  exercise={exercise}
+                  previousSession={findPreviousSession(state.history, exercise.exerciseId, workout.id)}
+                  onSaveSet={saveSet}
+                  onDeleteSet={deleteSet}
+                />
                 <button
                   type="button"
-                  onClick={addExercise}
-                  disabled={!selectedExerciseId}
+                  className="danger small remove-exercise"
+                  onClick={() => removeExercise(exercise.id)}
+                  aria-label={`Remove ${exercise.name} from workout`}
                 >
-                  Add exercise
+                  Remove exercise
                 </button>
               </div>
-            ) : (
-              <p className="muted">All available exercises have been added.</p>
-            )}
-          </section>
+            ))}
 
-          {workout.exercises.map((exercise) => (
-            <div key={exercise.id}>
-              <ExerciseCard
-                exercise={exercise}
-                onSaveSet={saveSet}
-                onDeleteSet={deleteSet}
-              />
+            <section className="finish-panel">
               <button
                 type="button"
-                className="danger small remove-exercise"
-                onClick={() => removeExercise(exercise.id)}
-                aria-label={`Remove ${exercise.name} from workout`}
+                onClick={finishWorkout}
+                disabled={totalSets === 0}
               >
-                Remove exercise
+                Finish workout
               </button>
-            </div>
-          ))}
+              <p className="muted">
+                {totalSets === 0
+                  ? "Log at least one set to finish."
+                  : "Save your final set or edit before finishing."}
+              </p>
+            </section>
+          </>
+        ) : null}
 
-          <section className="finish-panel">
-            <button
-              type="button"
-              onClick={finishWorkout}
-              disabled={totalSets === 0}
-            >
-              Finish workout
-            </button>
-            <p className="muted">
-              {totalSets === 0
-                ? "Log at least one set to finish."
-                : "Save your final set or edit before finishing."}
-            </p>
+        {!workout && state.history.length > 0 ? (
+          <section className="exercise-card" aria-labelledby="history-title">
+            <h2 id="history-title">Workout history</h2>
+            <ol className="history-list">
+              {state.history.map((session) => (
+                <li key={session.id}>
+                  <button
+                    type="button"
+                    className="secondary history-button"
+                    aria-pressed={completed?.id === session.id}
+                    onClick={() => { setSummaryId(session.id); window.scrollTo({ top: 0 }); }}
+                  >
+                    <strong>{new Date(session.completedAt).toLocaleString([], {
+                      dateStyle: "medium", timeStyle: "short"
+                    })}</strong>
+                    <span>{session.exercises.length} exercises · {session.exercises.reduce(
+                      (total, exercise) => total + exercise.sets.length, 0
+                    )} sets</span>
+                  </button>
+                </li>
+              ))}
+            </ol>
           </section>
-        </>
-      ) : null}
+        ) : null}
+      </fieldset>
     </main>
   );
 }

@@ -198,3 +198,25 @@ select:focus-visible {
   color: #c6d1e2;
   line-height: 1.9;
 }
+
+/* Day 5: local workout storage and history */
+.workout-controls { border: 0; margin: 0; padding: 0; min-width: 0; }
+.history-list { list-style: none; margin: 0; padding: 0; }
+.history-list li + li { margin-top: 12px; }
+.history-button { display: block; width: 100%; text-align: left; }
+.history-button span { display: block; margin-top: 6px; font-weight: 400; }
+.history-button[aria-pressed="true"] { border-color: #a3e635; }
+
+/* Day 6: previous-session reference */
+.previous-session {
+  margin-top: 20px;
+  padding: 16px;
+  border: 1px solid #344158;
+  border-radius: 10px;
+  background: #151d29;
+}
+.previous-session h3 { margin: 0; font-size: 16px; }
+.previous-session > .muted { margin: 8px 0 0; font-size: 14px; }
+.previous-set-list { margin: 8px 0; }
+.previous-set-list .set-row:last-child { border-bottom: 0; }
+.previous-session .previous-hint { font-size: 13px; }

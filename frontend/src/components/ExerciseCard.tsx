@@ -1,15 +1,18 @@
 import { useRef, useState } from "react";
 import type { FormEvent } from "react";
 import type { WorkoutExercise, WorkoutSet } from "../types/workout";
+import type { PreviousSession } from "../utils/workoutHistory";
 
 type Props = {
   exercise: WorkoutExercise;
-  onSaveSet: (exerciseId: string, set: WorkoutSet) => void;
-  onDeleteSet: (exerciseId: string, setId: string) => void;
+  previousSession: PreviousSession | null;
+  onSaveSet: (exerciseId: string, set: WorkoutSet) => Promise<boolean>;
+  onDeleteSet: (exerciseId: string, setId: string) => Promise<boolean>;
 };
 
 export default function ExerciseCard({
   exercise,
+  previousSession,
   onSaveSet,
   onDeleteSet
 }: Props) {
@@ -30,7 +33,7 @@ export default function ExerciseCard({
     setError("");
   }
 
-  function saveSet(event: FormEvent<HTMLFormElement>) {
+  async function saveSet(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     const weightKg = Number(weight);
@@ -48,14 +51,16 @@ export default function ExerciseCard({
       return;
     }
 
-    onSaveSet(exercise.id, {
+    const saved = await onSaveSet(exercise.id, {
       id: editingId ?? crypto.randomUUID(),
       weightKg,
       reps: repetitions
     });
 
-    resetForm();
-    weightInput.current?.focus();
+    if (saved) {
+      resetForm();
+      weightInput.current?.focus();
+    }
   }
 
   function editSet(set: WorkoutSet) {
@@ -70,18 +75,22 @@ export default function ExerciseCard({
     const lastSet = exercise.sets[exercise.sets.length - 1];
     if (!lastSet) return;
 
-    setWeight(String(lastSet.weightKg));
-    setReps(String(lastSet.reps));
+    fillFromSet(lastSet);
+  }
+
+  function fillFromSet(set: WorkoutSet) {
+    setWeight(String(set.weightKg));
+    setReps(String(set.reps));
     setError("");
     weightInput.current?.focus();
   }
 
-  function deleteSet(setId: string) {
+  async function deleteSet(setId: string) {
     if (!window.confirm("Delete this set?")) return;
 
-    onDeleteSet(exercise.id, setId);
+    const saved = await onDeleteSet(exercise.id, setId);
 
-    if (editingId === setId) {
+    if (saved && editingId === setId) {
       resetForm();
     }
   }
@@ -94,6 +103,47 @@ export default function ExerciseCard({
           {exercise.sets.length} {exercise.sets.length === 1 ? "set" : "sets"}
         </span>
       </div>
+
+      <section className="previous-session" aria-labelledby={`${exercise.id}-previous-title`}>
+        <h3 id={`${exercise.id}-previous-title`}>Previous session</h3>
+        {previousSession ? (
+          <>
+            <p className="muted">
+              <time dateTime={previousSession.completedAt}>
+                {new Date(previousSession.completedAt).toLocaleString([], {
+                  dateStyle: "medium", timeStyle: "short"
+                })}
+              </time>
+            </p>
+            <ol className="set-list previous-set-list">
+              {previousSession.sets.map((set, index) => (
+                <li className="set-row" key={set.id}>
+                  <div>
+                    <span className="muted">Set {index + 1}</span>
+                    <strong>{set.weightKg} kg × {set.reps} reps</strong>
+                  </div>
+                  <button
+                    type="button"
+                    className="secondary small"
+                    onClick={() => fillFromSet(set)}
+                    disabled={editingId !== null}
+                    aria-label={`Use ${exercise.name} previous session set ${index + 1}`}
+                  >
+                    Use set {index + 1}
+                  </button>
+                </li>
+              ))}
+            </ol>
+            <p className="muted previous-hint">
+              {editingId
+                ? "Save or cancel your edit to use a previous set."
+                : "Choose a set to fill the form, adjust it, then press Add set to log it."}
+            </p>
+          </>
+        ) : (
+          <p className="muted">No previous session for this exercise yet.</p>
+        )}
+      </section>
 
       {exercise.sets.length === 0 ? (
         <p className="muted">No sets logged yet. Add your first set below.</p>
