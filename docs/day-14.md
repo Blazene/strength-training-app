@@ -23,8 +23,9 @@ running during setup. Control + C stops both local servers.
 The command uses Node and OpenSSL. It stores local certificate files under the
 project's ignored `.local/phone-preview/` folder with private-key permissions.
 It does not install certificates into your Mac or phone. The setup server serves
-only instructions and the public certificate; HTTPS serves only built app files.
-It is a local preview, not public hosting, and does not expose backend routes.
+only instructions and the public certificate. HTTPS serves built app files and,
+from Days 15–16 onward, proxies account/API requests to the loopback backend.
+Account-owned endpoints require a valid session. This remains a local preview.
 
 ## One-time iPhone setup
 

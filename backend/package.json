@@ -7,12 +7,17 @@
     "dev": "tsx watch src/server.ts",
     "typecheck": "tsc --noEmit",
     "build": "tsc",
-    "start": "node dist/server.js"
+    "start": "node dist/server.js",
+    "setup": "tsx src/setup.ts",
+    "db:migrate": "tsx src/migrate.ts",
+    "test": "tsx --test tests/*.test.ts",
+    "test:integration": "tsx --test tests/integration.test.ts"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "better-auth": "1.7.14",
     "dotenv": "^18.0.9",
     "express": "^5.3.0",
     "pg": "^8.23.1"

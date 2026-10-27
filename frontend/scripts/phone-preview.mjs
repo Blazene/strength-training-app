@@ -7,6 +7,7 @@ import { hostname, networkInterfaces } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadPreviewAsset } from './preview-files.mjs';
+import { proxyAccountApi } from './api-proxy.mjs';
 
 const frontend = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const certificateDirectory = resolve(frontend, '../.local/phone-preview');
@@ -62,6 +63,8 @@ const bootstrap = createHttpServer((request, response) => {
   response.end(request.method === 'HEAD' ? undefined : body);
 });
 const app = createHttpsServer({ key: await readFile(path('server-key.pem')), cert: await readFile(path('server-cert.pem')) }, async (request, response) => {
+  const pathname = new URL(request.url, 'https://localhost').pathname;
+  if (pathname === '/api' || pathname.startsWith('/api/')) { proxyAccountApi(request, response, process.env.BACKEND_URL ?? 'http://127.0.0.1:4001'); return; }
   if (request.method !== 'GET' && request.method !== 'HEAD') { response.writeHead(405); response.end(); return; }
   const asset = await loadPreviewAsset(resolve(frontend, 'dist'), request.url);
   response.writeHead(asset ? 200 : 404, { 'content-type': asset?.type ?? 'text/plain', 'cache-control': 'no-cache', 'x-content-type-options': 'nosniff' });

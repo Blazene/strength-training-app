@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useWorkouts } from "./hooks/useWorkouts";
 import ExerciseCard from "./components/ExerciseCard";
 import OfflineStatus from "./components/OfflineStatus";
+import AccountPanel from "./components/AccountPanel";
 import WorkoutHistory from "./components/WorkoutHistory";
 import WorkoutSummary from "./components/WorkoutSummary";
 import { exercises } from "./data/exercises";
@@ -225,6 +226,7 @@ export default function App() {
         </button>
       </nav>
 
+      <AccountPanel />
       <OfflineStatus />
 
       <p className="notice">
