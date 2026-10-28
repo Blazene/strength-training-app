@@ -18,7 +18,7 @@ function buildAuth(pool: Pool, config: AppConfig, origin: string, validateSchema
           useSecureCookies: origin.startsWith("https://"),
           defaultCookieAttributes: { httpOnly: true, sameSite: "lax", path: "/api" }
         },
-        rateLimit: { enabled: true, window: 60, max: 100, customRules: {
+        rateLimit: { enabled: true, storage: config.production ? "database" : "memory", window: 60, max: 100, customRules: {
           "/sign-in/email": { window: 60, max: 10 },
           "/sign-up/email": { window: 60, max: 5 }
         } }

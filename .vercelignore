@@ -1,0 +1,16 @@
+**/node_modules
+**/dist
+**/.env
+**/.env.*
+**/.local
+**/*.log
+.git
+.vercel
+baseline.json
+docs
+**/tests
+**/*.pem
+**/*.key
+**/*.crt
+**/*.cer
+**/*.p12

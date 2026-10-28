@@ -8,3 +8,6 @@ dist/
 
 # Local PostgreSQL data
 .local/
+
+# Local deployment links and pulled environment files
+.vercel/

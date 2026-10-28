@@ -1,4 +1,5 @@
 import express from "express";
+import { isIP } from "node:net";
 import type { ErrorRequestHandler, Request, Response } from "express";
 import { fromNodeHeaders, toNodeHandler } from "better-auth/node";
 import type { Pool } from "pg";
@@ -24,7 +25,10 @@ export function createApp(pool: Pool, config: AppConfig) {
   const auths = createAuthFactory(pool, config);
   app.use("/api", (req, res, next) => {
     res.setHeader("Cache-Control", "no-store");
-    req.headers["x-strength-client-ip"] = req.socket.remoteAddress ?? "127.0.0.1";
+    // Only the Vercel runtime may supply this platform-overwritten address.
+    // Local clients cannot spoof rate-limit identity through forwarded headers.
+    const platformIp = config.vercel ? req.get("x-vercel-forwarded-for")?.split(",")[0].trim() : undefined;
+    req.headers["x-strength-client-ip"] = platformIp && isIP(platformIp) ? platformIp : req.socket.remoteAddress ?? "127.0.0.1";
     try {
       const origin = publicOrigin(req, config);
       if ((req.get("origin") && req.get("origin") !== origin) || (!["GET", "HEAD"].includes(req.method) && req.get("origin") !== origin)) {
