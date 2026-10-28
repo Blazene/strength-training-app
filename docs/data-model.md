@@ -93,3 +93,12 @@ cache app files and exclude API responses.
 
 Use the most recent completed workout containing logged sets for the exercise.
 Exclude the active workout and preserve saved set order.
+
+## Production authentication storage (Days 24–25)
+
+Better Auth also manages a `rateLimit` table for production login counters.
+Production instances share these counters in PostgreSQL; local development uses
+in-memory rate limits. Hosted migrations run with production configuration to
+create the required auth schema, then the checksummed application migrations.
+Session cookies remain origin-specific even when account data is copied to
+another database.

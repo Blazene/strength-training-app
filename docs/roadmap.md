@@ -22,7 +22,7 @@ future day requests rather than inferring a different order.
 | 22–23 | Full offline/failure/session-expiry tests and data-loss fixes | Implemented and verified: repository browser suite with isolated PostgreSQL, offline browser restarts, API restart/expiry recovery, atomic app updates, focus protection and sync-completion race fix |
 | 24–25 | Frontend/API/database hosting, HTTPS, production auth | Live and verified: Vercel Hobby + Neon Free, one HTTPS origin, secure production accounts, shared login limits, hosted Chromium/WebKit tests and public Safari/WebKit offline restart/sync checks |
 | 26 | Real workout with deployed version on phone | Pending |
-| 27 | README, setup, architecture, limits, screenshots | Pending final project documentation |
+| 27 | README, setup, architecture, limits, screenshots | Complete: project/frontend READMEs, verified fresh-clone setup, architecture/sync flow, current limitations and four reviewed screenshots with synthetic data |
 | 28 | Bug buffer and short demo | Pending |
 
 Version 1 assumes one logging device at a time. AI recommendations, social feeds,

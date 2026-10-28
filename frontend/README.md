@@ -1,75 +1,28 @@
-# React + TypeScript + Vite
+# Strength Training frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+React + TypeScript + Vite client for the [Strength Training app](https://strength-training-app-six.vercel.app).
 
-Currently, two official plugins are available:
+Start with the [project README](../README.md) and [local setup guide](../docs/setup.md). Install dependencies in both packages and configure PostgreSQL/the backend before using accounts or sync locally.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
-
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-
+```sh
+# From frontend/
+npm ci
+npm run dev
 ```
 
-You can also install [eslint-plugin-react-x](https://npmx.dev/package/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://npmx.dev/package/eslint-plugin-react-dom) for React-specific lint rules:
+Open <http://localhost:5173/>. The dev server proxies `/api` to `http://127.0.0.1:4001`; `BACKEND_URL` can override that target. Keep the same browser origin to retain local workouts.
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+| Command | Purpose |
+| --- | --- |
+| `npm run dev` | Hot reload; no production offline worker |
+| `npm run build` | TypeScript check, Vite build and generated PWA shell |
+| `npm run preview -- --host localhost --port 5173 --strictPort` | Serve the built app for local offline tests; stop dev first |
+| `npm run phone` | Build and serve the Mac's same-Wi-Fi iPhone HTTPS preview |
+| `npm test` | Frontend unit/helper checks |
+| `npm run lint` | ESLint |
+| `npm run test:e2e:install` | Install the pinned Playwright Chromium/WebKit engines |
+| `npm run test:e2e` | Both apps' checks plus isolated PostgreSQL/browser regressions |
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+`src/storage/` handles IndexedDB state and atomic queue writes. `src/sync/` handles ownership, retries, downloads and merge decisions. `pwa/offlinePlugin.ts` emits the worker and app-shell manifest during a production build. Unfinished form fields stay in React state until saved.
 
-```
+See [architecture](../docs/architecture.md), [known limitations](../docs/limitations.md), and [test instructions](../docs/day-22.md). Do not put secrets or database credentials in `VITE_*` variables.
